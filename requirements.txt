@@ -1,0 +1,4 @@
+Pillow
+numpy
+boto3
+modal

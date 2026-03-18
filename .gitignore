@@ -2,5 +2,3 @@ sreda100_output/
 __pycache__/
 *.pyc
 .DS_Store
-fonts/*.ttf
-fonts/*.otf
