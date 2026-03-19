@@ -31,7 +31,7 @@ import modal
 
 image = (
     modal.Image.debian_slim(python_version="3.11")
-    .pip_install("Pillow", "numpy", "boto3")
+    .pip_install("Pillow", "numpy", "boto3", "fastapi[standard]")
     # Fonts folder is copied from your repo into the container at build time.
     # Put your .ttf / .ttc files in repo/fonts/ — see README for which ones.
     .add_local_dir("fonts", remote_path="/fonts")
