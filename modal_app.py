@@ -138,7 +138,7 @@ def upload_to_r2(data: bytes, filename: str) -> str:
 # ---------------------------------------------------------------------------
 
 @app.function(secrets=[r2_secret], timeout=120)
-@modal.web_endpoint(method="POST")
+@modal.fastapi_endpoint(method="POST")
 def generate_endpoint(body: dict) -> dict:
     """
     POST /generate
