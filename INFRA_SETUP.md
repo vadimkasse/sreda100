@@ -172,3 +172,7 @@ When you switch to video generation:
 ## Modal endpoint URL
 
 https://kassevadim--sreda100-generate-endpoint.modal.run
+
+## Cloudflare R2 public URL
+
+https://pub-41e89db587354fcfbaa632ca1e3ffe3a.r2.dev
