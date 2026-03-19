@@ -168,3 +168,7 @@ When you switch to video generation:
 2. Update `modal_app.py`: change `ContentType` to `video/mp4`, adjust filename
 3. In Make: swap Instagram Photo Post → Instagram Reel, update media field
 4. Everything else (URL flow, Drive archive) stays identical
+
+## Modal endpoint URL
+
+https://kassevadim--sreda100-generate-endpoint.modal.run
