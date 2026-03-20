@@ -6,18 +6,20 @@
 sreda100_v20.py        ← generation logic (edit freely)
 modal_app.py           ← infrastructure: endpoint + R2 upload (edit rarely)
 requirements.txt
-fonts/                 ← TTF copies of macOS fonts (copy once, never touch)
-  Helvetica-Bold.ttf
-  HelveticaNeue-Bold.ttf
-  HelveticaNeue-CondBold.ttf
-  HelveticaNeue-Black.ttf
-  Futura-Bold.ttf
-  Futura-CondExtraBold.ttf
-  Didot-Bold.ttf
-  GillSans-Bold.ttf
-  GillSans-UltraBold.ttf
-  Impact.ttf
-  Rockwell-Bold.ttf
+fonts/                 ← TTF files (open license, committed to repo)
+  Inter-Bold.ttf
+  Inter-Black.ttf
+  Outfit-Bold.ttf
+  BarlowCondensed-Bold.ttf
+  BarlowCondensed-ExtraBold.ttf
+  PlayfairDisplay-Bold.ttf
+  Lato-Bold.ttf
+  Lato-Black.ttf
+  Anton-Regular.ttf
+  RobotoSlab-Bold.ttf
+  NunitoSans-ExtraBold.ttf
+  DMSans-Bold.ttf
+  PlusJakartaSans-Bold.ttf
 .github/
   workflows/
     deploy.yml         ← auto-deploy on push to main
@@ -27,45 +29,13 @@ fonts/                 ← TTF copies of macOS fonts (copy once, never touch)
 
 ## One-time setup
 
-### 1. Copy fonts from Mac
+### 1. Fonts
 
-Fonts live in `/System/Library/Fonts/` and `/System/Library/Fonts/Supplemental/`.
-TTC files contain multiple fonts — extract the bold variant as TTF:
+All fonts are open license (Google Fonts). Download TTF files and place them in `fonts/`.
+Commit the `fonts/` folder — it's included in the Modal container at build time.
 
-```bash
-# Install fonttools
-pip install fonttools
-
-# Extract bold variant from TTC (index numbers match sreda100_v20.py)
-python3 - <<'EOF'
-from fontTools.ttLib import TTCollection
-import os
-
-extractions = [
-    ("/System/Library/Fonts/Helvetica.ttc",                    1, "fonts/Helvetica-Bold.ttf"),
-    ("/System/Library/Fonts/HelveticaNeue.ttc",                1, "fonts/HelveticaNeue-Bold.ttf"),
-    ("/System/Library/Fonts/HelveticaNeue.ttc",                4, "fonts/HelveticaNeue-CondBold.ttf"),
-    ("/System/Library/Fonts/HelveticaNeue.ttc",                9, "fonts/HelveticaNeue-Black.ttf"),
-    ("/System/Library/Fonts/Supplemental/Futura.ttc",          2, "fonts/Futura-Bold.ttf"),
-    ("/System/Library/Fonts/Supplemental/Futura.ttc",          4, "fonts/Futura-CondExtraBold.ttf"),
-    ("/System/Library/Fonts/Supplemental/Didot.ttc",           2, "fonts/Didot-Bold.ttf"),
-    ("/System/Library/Fonts/Supplemental/GillSans.ttc",        1, "fonts/GillSans-Bold.ttf"),
-    ("/System/Library/Fonts/Supplemental/GillSans.ttc",        6, "fonts/GillSans-UltraBold.ttf"),
-]
-
-os.makedirs("fonts", exist_ok=True)
-for src, idx, dst in extractions:
-    ttc = TTCollection(src)
-    ttc.fonts[idx].save(dst)
-    print(f"✅ {dst}")
-EOF
-
-# Impact and Rockwell are plain TTF — just copy
-cp /System/Library/Fonts/Supplemental/Impact.ttf fonts/Impact.ttf
-cp /System/Library/Fonts/Supplemental/Rockwell.ttc fonts/Rockwell-Bold.ttf
-```
-
-Commit the `fonts/` folder. You only need to do this once (or when adding new fonts).
+> Note: macOS system fonts (Helvetica, Futura, etc.) cannot be used in the cloud container due to licensing.
+> Current set uses Google Fonts equivalents. Font quality improvements are planned.
 
 ---
 
@@ -82,7 +52,7 @@ Commit the `fonts/` folder. You only need to do this once (or when adding new fo
 ### 3. Modal secrets
 
 ```bash
-pip install modal
+pip install modal boto3
 modal token new   # opens browser, saves token locally
 
 # Create secret with R2 credentials
@@ -104,10 +74,10 @@ modal deploy modal_app.py
 
 Modal prints the endpoint URL:
 ```
-✓ Created web endpoint https://vadimkasse--sreda100-generate-endpoint.modal.run
+✓ Created web endpoint https://kassevadim--sreda100-generate-endpoint.modal.run
 ```
 
-Save this URL — you'll paste it into Make.
+Save this URL — paste it into Make.
 
 ---
 
@@ -127,52 +97,84 @@ After this, every `git push` to `main` redeploys automatically.
 ### 6. Make scenario
 
 ```
-[Schedule: every day at 10:00]
+[Schedule: every day at N:00]
   │
-  ├─ [HTTP: POST https://...modal.run/generate]
-  │    Body (JSON): { "day": "{{formatDate(now; "DDDD")}}" }
-  │    Response mapping: url, filename, day, seed
+  ├─ [HTTP: POST https://kassevadim--sreda100-generate-endpoint.modal.run]
+  │    Body (JSON string): {"day": "{{formatDate(now; "dddd")}}"}
+  │    Parse response: true
+  │    Response fields: url, filename, day, seed, day_number,
+  │                     effect1, effect2, intensity1, intensity2, font, gradient
   │
   ├─ [Instagram for Business: Create a Photo Post]
   │    Photo URL: {{url}}
-  │    Caption: {{day}}
-  │
-  ├─ [LinkedIn: Create a Share]
-  │    Content: {{day}}
-  │    Media URL: {{url}}
+  │    Caption: (see caption template below)
   │
   └─ [Google Drive: Upload a File]
-       File URL: {{url}}
+       Data: {{url}}
        File name: {{filename}}
        Folder: /sreda100-archive/
 ```
 
+**Caption template:**
+```
+Day {{day_number}}/100 — {{font}} · {{effect1}} {{intensity1}} / {{effect2}} {{intensity2}}
+
+SREDA100 — generative typography project. One artifact per day, fully automated.
+
+Pipeline: Python script renders a unique typographic artwork → Cloudflare R2 → Modal endpoint → Make schedules and posts. No manual steps, no design decisions at runtime. The system decides.
+
+#sreda100 #generativeart #typography #automation #python #creativecoding
+```
+
 **Notes:**
-- Make's `formatDate(now; "DDDD")` returns the full day name in uppercase — matches what the script expects.
-- Instagram requires the image to be publicly accessible via URL — R2 public bucket handles this.
-- LinkedIn media upload requires the URL to be reachable without auth — same.
-- Google Drive module in Make: use **Upload a File** → set source to URL → paste `{{url}}`.
+- `formatDate(now; "dddd")` returns full day name (e.g. `thursday`) — script does `.upper()` internally
+- `day_number` is calculated server-side from project start date (2026-03-19)
+- LinkedIn is not in the auto-posting flow — post manually for announcements and milestones
+- R2 public bucket makes the image URL accessible without auth — required by Instagram and Drive
+
+---
+
+## API response reference
+
+`POST /generate` → returns:
+
+| Field | Example | Description |
+|-------|---------|-------------|
+| `url` | `https://pub-xxx.r2.dev/shatter52_...png` | Public image URL |
+| `filename` | `shatter52_twist22_...png` | Full filename with all params |
+| `day` | `THURSDAY` | Day of week, uppercase |
+| `seed` | `890859871` | Seed for reproducibility |
+| `day_number` | `2` | Day in the 100-day series |
+| `effect1` | `shatter` | Primary displacement effect |
+| `effect2` | `chaos` | Secondary displacement effect |
+| `intensity1` | `64` | Primary effect intensity (0–100) |
+| `intensity2` | `12` | Secondary effect intensity (0–100) |
+| `font` | `inter_bold` | Font label |
+| `gradient` | `violet-ice` | Gradient color pair |
 
 ---
 
 ## Updating the generation script
 
-Just edit `sreda100_v20.py` and push to `main`.
+Edit `sreda100_v20.py` and push to `main`.
 GitHub Actions redeploys `modal_app.py` which re-bundles the updated script.
 Make and the endpoint URL are unaffected.
 
+---
+
 ## Migrating to video
 
-When you switch to video generation:
-1. Update `sreda100_v20.py` to produce an MP4/MOV instead of PNG
-2. Update `modal_app.py`: change `ContentType` to `video/mp4`, adjust filename
-3. In Make: swap Instagram Photo Post → Instagram Reel, update media field
-4. Everything else (URL flow, Drive archive) stays identical
+When switching to video generation:
+1. Update `sreda100_v20.py` to produce MP4 instead of PNG
+2. Update `modal_app.py`: change `ContentType` to `video/mp4`, adjust filename extension
+3. In Make: swap Instagram Photo Post → Instagram Reel
+4. Everything else (URL flow, Drive archive, caption) stays identical
 
-## Modal endpoint URL
+---
 
-https://kassevadim--sreda100-generate-endpoint.modal.run
+## Adding Bluesky
 
-## Cloudflare R2 public URL
-
-https://pub-41e89db587354fcfbaa632ca1e3ffe3a.r2.dev
+1. In Make: add **Bluesky** module after Instagram
+2. Connect Bluesky account
+3. Post text + image URL
+4. No API cost — Bluesky API is free

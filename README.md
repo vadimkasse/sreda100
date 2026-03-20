@@ -1,6 +1,6 @@
 # SREDA100
 
-A 100-day generative typography project. Each day produces a unique visual artifact based on a single word — the day of the week — processed through a parametric displacement pipeline.
+A 100-day generative typography project. Each day produces a unique visual artifact based on a single word — the day of the week — processed through a parametric displacement pipeline. Fully automated: generation, upload, and posting require zero manual steps.
 
 ## Concept
 
@@ -13,13 +13,15 @@ No manual composition. No design decisions at runtime. The system decides.
 ## How it works
 
 ```
-word → bold font (random) → tiled grid → displacement pass 1 → displacement pass 2 (subtle) → PNG
+word → bold font (random) → tiled grid → displacement pass 1 → displacement pass 2 (subtle) → PNG → R2 → Instagram
 ```
 
 **Variables per render:**
-- Font: 11 bold/heavy typefaces (system fonts + custom)
+- Font: 13 bold/heavy typefaces (Google Fonts, open license)
 - Size: fits 20–95% of canvas width, minimum 90px
 - Letter spacing: −10 to +80px
+- Gradient: two adjacent colors from an 11-color palette wheel, random angle
+- Halo: chromatic fringe effect, random color + direction
 - Effect 1: `earthquake` / `gravity` / `chaos` / `shatter` / `noise_flow`
 - Effect 2: subtle secondary deformation (t = 0.10–0.25)
 - Seed: reproducible via `--seed`
@@ -35,7 +37,7 @@ word → bold font (random) → tiled grid → displacement pass 1 → displacem
 
 `1080 × 1920px` PNG, filename encodes all parameters:
 ```
-earthquake57_shatter19_helvetica_neue_black_fs199_ls3_MONDAY_20260316_s3846787293.png
+shatter52_twist22_violet-ice_halopink3_outfit_bold_fs125_ls-10_THURSDAY_20260319_s890859871.png
 ```
 
 ## Usage
@@ -44,21 +46,35 @@ earthquake57_shatter19_helvetica_neue_black_fs199_ls3_MONDAY_20260316_s384678729
 pip install Pillow numpy
 
 # Generate 20 variants for today
-python sreda100_v15.py
+python sreda100_v20.py
 
 # Specific day, batch of 40
-python sreda100_v15.py --day TUESDAY --batch 40
+python sreda100_v20.py --day TUESDAY --batch 40
 
 # Reproducible result
-python sreda100_v15.py --day MONDAY --seed 3846787293
-
-# With chromatic aberration glitch pass
-python sreda100_v15.py --day FRIDAY --batch 20 --glitch
+python sreda100_v20.py --day MONDAY --seed 3846787293
 ```
 
-## Development history
+## Automation pipeline
 
-The visual system was built iteratively — each version refining effect parameters, font selection, and displacement logic based on output evaluation.
+```
+[Make: Schedule daily]
+    → [HTTP POST → Modal endpoint]
+        → generates PNG
+        → uploads to Cloudflare R2
+        → returns url, filename, day, seed, day_number, effect1, effect2, intensity1, intensity2, font, gradient
+    → [Instagram for Business: Create a Photo Post]
+    → [Google Drive: Upload a File → /sreda100-archive/]
+```
+
+Caption is generated dynamically:
+```
+Day N/100 — font · effect1 intensity / effect2 intensity
+```
+
+LinkedIn: manual posts only (project announcements, milestones).
+
+## Development history
 
 | Version | Key change |
 |---------|-----------|
@@ -71,18 +87,26 @@ The visual system was built iteratively — each version refining effect paramet
 | v13 | Correct bold ttc indices, font size capped at 200px |
 | v14 | Earthquake + gravity primary only, font inspector tool |
 | v15 | Bimodal chaos, twist removed, min font size 90px |
+| v17 | Gradient applied to word tile |
+| v19 | Monochrome halo split as final color pass |
+| v20 | Full pipeline: gradient + two-pass displacement + halo |
 
 ## Stack
 
 - Python 3.x
 - Pillow — image rendering and composition
 - NumPy — displacement field computation
-- macOS system fonts (TTC/TTF with explicit bold index)
+- Google Fonts (open license TTF) — 13 bold/heavy typefaces
+- Modal — serverless endpoint
+- Cloudflare R2 — image storage and public CDN
+- Make — scheduling and social posting
 
-## Tools
+## Roadmap
 
-`font_inspector.py` — scans system font files, identifies bold variant indices for TTС collections.
+- Bluesky: add auto-posting module in Make
+- Font quality: replace current set with higher-quality alternatives (current fonts render with minor artifacts)
+- Video: migrate from PNG to MP4, switch Instagram Photo → Reel
 
 ## Project status
 
-Active. Daily posts on [Instagram](https://instagram.com) and [LinkedIn](https://linkedin.com/in/vadimkasse).
+Active. Started 19 March 2026. Daily posts on [Instagram](https://www.instagram.com/vadimkassepro/).
