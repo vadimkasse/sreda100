@@ -20,7 +20,9 @@ Environment secrets (set in Modal dashboard):
 import io
 import os
 import random
-from datetime import datetime
+from datetime import date, datetime
+start = date(2026, 3, 19)
+day_number = (date.today() - start).days + 1
 
 import boto3
 import modal
@@ -103,7 +105,7 @@ def generate_to_bytes(day: str, seed: int | None = None) -> tuple[bytes, str]:
 
     try:
         # generate() returns the would-be file path — we use it for the filename
-        out_path = gen.generate(day, seed)
+        out_path, meta = gen.generate(day, seed)
         filename = os.path.basename(out_path)
     finally:
         gen.Image.Image.save = original_save  # always restore
@@ -111,7 +113,7 @@ def generate_to_bytes(day: str, seed: int | None = None) -> tuple[bytes, str]:
     if "data" not in captured:
         raise RuntimeError("Image was never saved — check generate() logic.")
 
-    return captured["data"], filename
+    return captured["data"], filename, meta
 
 
 def upload_to_r2(data: bytes, filename: str) -> str:
@@ -140,24 +142,17 @@ def upload_to_r2(data: bytes, filename: str) -> str:
 @app.function(secrets=[r2_secret], timeout=120)
 @modal.fastapi_endpoint(method="POST")
 def generate_endpoint(body: dict) -> dict:
-    """
-    POST /generate
-    Body: { "day": "WEDNESDAY", "seed": 12345 }  — seed is optional
+    from datetime import date, datetime
 
-    Returns:
-    {
-        "url": "https://pub-xxx.r2.dev/earthquake57_..._WEDNESDAY_20260318_s123.png",
-        "filename": "earthquake57_..._WEDNESDAY_20260318_s123.png",
-        "day": "WEDNESDAY",
-        "seed": 12345
-    }
-    """
     day = body.get("day", datetime.now().strftime("%A")).upper()
     seed = body.get("seed", None)
     if seed is None:
         seed = random.randint(0, 2**32)
 
-    png_bytes, filename = generate_to_bytes(day, seed)
+    start = date(2026, 3, 19)
+    day_number = (date.today() - start).days + 1
+
+    png_bytes, filename, meta = generate_to_bytes(day, seed)
     url = upload_to_r2(png_bytes, filename)
 
     return {
@@ -165,4 +160,6 @@ def generate_endpoint(body: dict) -> dict:
         "filename": filename,
         "day": day,
         "seed": seed,
+        "day_number": day_number,
+        **meta,
     }

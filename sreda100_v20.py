@@ -360,7 +360,14 @@ def generate(day, seed=None):
     out_path = os.path.join(OUTPUT_DIR, fname)
     bg.save(out_path, "PNG")
     print(f"✅ {e1:12s}{int(t1*100):2d} | grad={grad_label:20s} | halo={halo_name:6s}{int(halo_r):2d}px | {font_label}")
-    return out_path
+    return out_path, {
+        "effect1": e1,
+        "effect2": e2,
+        "intensity1": int(t1 * 100),
+        "intensity2": int(t2 * 100),
+        "font": font_label,
+        "gradient": grad_label,
+    }
 
 
 if __name__ == "__main__":
