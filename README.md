@@ -13,7 +13,7 @@ No manual composition. No design decisions at runtime. The system decides.
 ## How it works
 
 ```
-word → bold font (random) → tiled grid → displacement pass 1 → displacement pass 2 (subtle) → PNG → R2 → Instagram
+word → bold font (random) → tiled grid → displacement pass 1 → displacement pass 2 (subtle) → PNG → R2 → Instagram + Bluesky
 ```
 
 **Variables per render:**
@@ -65,12 +65,15 @@ python sreda100_v20.py --day MONDAY --seed 3846787293
         → returns url, filename, day, seed, day_number, effect1, effect2, intensity1, intensity2, font, gradient
     → [Instagram for Business: Create a Photo Post]
     → [Google Drive: Upload a File → /sreda100-archive/]
+    → [HTTP → Bluesky Auth → Download PNG → Bluesky Upload → Bluesky Post]
 ```
 
 Caption is generated dynamically:
 ```
 Day N/100 — font · effect1 intensity / effect2 intensity
 ```
+
+Note: Bluesky posting uses direct AT Protocol API calls via HTTP modules (Make's native Bluesky module does not correctly handle blob refs).
 
 LinkedIn: manual posts only (project announcements, milestones).
 
@@ -103,10 +106,9 @@ LinkedIn: manual posts only (project announcements, milestones).
 
 ## Roadmap
 
-- Bluesky: add auto-posting module in Make
 - Font quality: replace current set with higher-quality alternatives (current fonts render with minor artifacts)
 - Video: migrate from PNG to MP4, switch Instagram Photo → Reel
 
 ## Project status
 
-Active. Started 19 March 2026. Daily posts on [Instagram](https://www.instagram.com/vadimkassepro/).
+Active. Started 19 March 2026. Daily posts on [Instagram](https://www.instagram.com/vadimkassepro/) and [Bluesky](https://bsky.app/profile/vadimkasse.bsky.social).
