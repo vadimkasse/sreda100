@@ -17,7 +17,7 @@ word → bold font (random) → tiled grid → displacement pass 1 → displacem
 ```
 
 **Variables per render:**
-- Font: 11 bold/heavy macOS system typefaces
+- Font: 13 bold/heavy Google Fonts (open license TTF)
 - Size: fits 20–95% of canvas width, minimum 90px
 - Letter spacing: −10 to +80px
 - Gradient: two adjacent colors from an 11-color palette wheel, random angle
@@ -129,7 +129,7 @@ LinkedIn: manual posts only (project announcements, milestones).
 - Python 3.x
 - Pillow — image rendering and composition
 - NumPy — displacement field computation
-- macOS system fonts — 11 bold/heavy typefaces
+- Google Fonts (open license TTF) — 13 bold/heavy typefaces
 - Modal — serverless endpoint
 - Cloudflare R2 — image storage and public CDN
 - Make — scheduling and social posting

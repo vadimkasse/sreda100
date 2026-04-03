@@ -19,18 +19,22 @@ import os
 WIDTH, HEIGHT = 1080, 1920
 OUTPUT_DIR = os.path.expanduser("~/sreda100_output")
 
+FONTS_DIR = os.path.join(os.path.dirname(__file__), "fonts")
+
 BOLD_FONTS = [
-    ("/System/Library/Fonts/Helvetica.ttc",                       1, "helvetica_bold"),
-    ("/System/Library/Fonts/HelveticaNeue.ttc",                   1, "helvetica_neue_bold"),
-    ("/System/Library/Fonts/HelveticaNeue.ttc",                   4, "helvetica_neue_cond_bold"),
-    ("/System/Library/Fonts/HelveticaNeue.ttc",                   9, "helvetica_neue_black"),
-    ("/System/Library/Fonts/Supplemental/Futura.ttc",             2, "futura_bold"),
-    ("/System/Library/Fonts/Supplemental/Futura.ttc",             4, "futura_cond_extrabold"),
-    ("/System/Library/Fonts/Supplemental/Didot.ttc",              2, "didot_bold"),
-    ("/System/Library/Fonts/Supplemental/GillSans.ttc",           1, "gill_sans_bold"),
-    ("/System/Library/Fonts/Supplemental/GillSans.ttc",           6, "gill_sans_ultrabold"),
-    ("/System/Library/Fonts/Supplemental/Impact.ttf",             0, "impact"),
-    ("/System/Library/Fonts/Supplemental/Rockwell.ttc",           2, "rockwell_bold"),
+    (os.path.join(FONTS_DIR, "Anton-Regular.ttf"),                      0, "anton"),
+    (os.path.join(FONTS_DIR, "BarlowCondensed-Bold.ttf"),               0, "barlow_cond_bold"),
+    (os.path.join(FONTS_DIR, "BarlowCondensed-ExtraBold.ttf"),          0, "barlow_cond_xbold"),
+    (os.path.join(FONTS_DIR, "DMSans-Bold.ttf"),                        0, "dm_sans_bold"),
+    (os.path.join(FONTS_DIR, "Inter-Black.ttf"),                        0, "inter_black"),
+    (os.path.join(FONTS_DIR, "Inter-Bold.ttf"),                         0, "inter_bold"),
+    (os.path.join(FONTS_DIR, "Lato-Black.ttf"),                         0, "lato_black"),
+    (os.path.join(FONTS_DIR, "Lato-Bold.ttf"),                          0, "lato_bold"),
+    (os.path.join(FONTS_DIR, "NunitoSans-ExtraBold.ttf"),               0, "nunito_xbold"),
+    (os.path.join(FONTS_DIR, "Outfit-Bold.ttf"),                        0, "outfit_bold"),
+    (os.path.join(FONTS_DIR, "PlayfairDisplay-Bold.ttf"),               0, "playfair_bold"),
+    (os.path.join(FONTS_DIR, "PlusJakartaSans-Bold.ttf"),               0, "plus_jakarta_bold"),
+    (os.path.join(FONTS_DIR, "RobotoSlab-Bold.ttf"),                    0, "roboto_slab_bold"),
 ]
 
 AVAILABLE_FONTS = [(p, i, l) for p, i, l in BOLD_FONTS if os.path.exists(p)]
