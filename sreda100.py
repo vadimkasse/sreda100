@@ -66,11 +66,12 @@ HALO_PALETTE = [
     ((140,  80, 255), "violet"),
 ]
 
-PRIMARY_EFFECTS = ["chaos", "earthquake", "shatter", "noise_flow", "gravity"]
-PRIMARY_WEIGHTS = [3, 6, 4, 1, 6]
+PRIMARY_EFFECTS = ["chaos", "earthquake", "shatter", "noise_flow", "gravity",
+                   "glitch", "shear", "tilt", "drift", "scatter", "fold", "melt", "wave"]
+PRIMARY_WEIGHTS = [3, 6, 4, 1, 6, 2, 2, 2, 3, 2, 2, 2, 2]
 
-SECONDARY_EFFECTS = ["chaos", "twist", "shatter"]
-SECONDARY_WEIGHTS = [4, 3, 3]
+SECONDARY_EFFECTS = ["chaos", "twist", "shatter", "ripple", "pull"]
+SECONDARY_WEIGHTS = [4, 3, 3, 2, 2]
 
 INCOMPATIBLE = {"chaos": ["twist"], "twist": ["chaos"]}
 
@@ -219,6 +220,109 @@ def displacement(t, seed, mode):
         dist_to_line = yi - gy
         dx = amp * 0.5 * np.sin(xi*freq + dist_to_line*0.008)
         dy = -np.sign(dist_to_line) * np.clip(np.abs(dist_to_line)*t*0.8, 0, amp*1.5)
+    elif mode == "glitch":
+        # Sharp asymmetric shifts, VHS artifact look
+        dx = np.zeros((h,w), np.float32)
+        dy = np.zeros((h,w), np.float32)
+        n_glitches = rng.randint(4, 12)
+        for _ in range(n_glitches):
+            y0 = rng.randint(0, h)
+            h_glitch = rng.randint(20, 80)
+            y1 = min(y0 + h_glitch, h)
+            shift = rng.uniform(-amp, amp) * rng.choice([-1, 1])
+            mask_g = (yi >= y0) & (yi < y1)
+            dx += mask_g * shift * (1 + rng.uniform(-0.5, 0.5))
+    elif mode == "shear":
+        # Diagonal shift across whole frame
+        dx = np.zeros((h,w), np.float32)
+        dy = np.zeros((h,w), np.float32)
+        shear_amount = rng.uniform(-0.5, 0.5)
+        dx = amp * shear_amount * (yi / h - 0.5)
+        dy = amp * shear_amount * (xi / w - 0.5)
+    elif mode == "tilt":
+        # Perspective distortion, canvas on tilted plane
+        dx = np.zeros((h,w), np.float32)
+        dy = np.zeros((h,w), np.float32)
+        tilt_x = rng.uniform(-0.3, 0.3)
+        tilt_y = rng.uniform(-0.3, 0.3)
+        dx = amp * tilt_x * (yi / h - 0.5)
+        dy = amp * tilt_y * (xi / w - 0.5)
+    elif mode == "drift":
+        # Smooth varying shifts per band
+        dx = np.zeros((h,w), np.float32)
+        dy = np.zeros((h,w), np.float32)
+        n_bands = rng.randint(6, 15)
+        bh = h // n_bands
+        prev_shift = 0
+        for i in range(n_bands):
+            y0, y1 = i*bh, (i+1)*bh
+            target_shift = rng.uniform(-amp, amp)
+            shift = prev_shift + (target_shift - prev_shift) * 0.6
+            mask_b = (yi >= y0) & (yi < y1)
+            dx += mask_b * shift
+            prev_shift = shift
+    elif mode == "scatter":
+        # Random blocks with independent displacement
+        dx = np.zeros((h,w), np.float32)
+        dy = np.zeros((h,w), np.float32)
+        block_size = rng.randint(30, 80)
+        for by in range(0, h, block_size):
+            for bx in range(0, w, block_size):
+                bdx = rng.uniform(-amp, amp) * 0.5
+                bdy = rng.uniform(-amp, amp) * 0.5
+                by_end = min(by + block_size, h)
+                bx_end = min(bx + block_size, w)
+                dx[by:by_end, bx:bx_end] = bdx
+                dy[by:by_end, bx:bx_end] = bdy
+    elif mode == "fold":
+        # Mirror along random axis
+        dx = np.zeros((h,w), np.float32)
+        dy = np.zeros((h,w), np.float32)
+        fold_axis = rng.choice(["vertical", "horizontal"])
+        if fold_axis == "vertical":
+            fold_x = rng.uniform(w*0.2, w*0.8)
+            dist_from_fold = np.abs(xi - fold_x)
+            dx = amp * 0.8 * np.sign(xi - fold_x) * (1.0 - np.exp(-dist_from_fold/100))
+        else:
+            fold_y = rng.uniform(h*0.2, h*0.8)
+            dist_from_fold = np.abs(yi - fold_y)
+            dy = amp * 0.8 * np.sign(yi - fold_y) * (1.0 - np.exp(-dist_from_fold/100))
+    elif mode == "melt":
+        # Vertical displacement increases top to bottom
+        dx = np.zeros((h,w), np.float32)
+        melt_factor = yi / h
+        dy = amp * melt_factor * 0.7 + amp * 0.3 * np.sin(xi*0.01 + rng.uniform(0, 6.28))
+    elif mode == "wave":
+        # Horizontal sine waves, uniform amplitude
+        dx = np.zeros((h,w), np.float32)
+        dy = np.zeros((h,w), np.float32)
+        n_waves = rng.randint(3, 8)
+        for i in range(n_waves):
+            freq = rng.uniform(0.003, 0.015)
+            phase = rng.uniform(0, 6.28)
+            dx += amp * 0.3 * np.sin(yi*freq + phase) / n_waves
+    elif mode == "ripple":
+        # Concentric circles from random point, subtle
+        cx = rng.uniform(0, w)
+        cy = rng.uniform(0, h)
+        dist = np.sqrt((xi-cx)**2 + (yi-cy)**2)
+        freq = rng.uniform(0.005, 0.020)
+        phase = rng.uniform(0, 6.28)
+        wave = np.sin(dist*freq + phase)
+        dx = amp * 0.3 * wave * (xi-cx) / (dist + 1)
+        dy = amp * 0.3 * wave * (yi-cy) / (dist + 1)
+    elif mode == "pull":
+        # Attraction toward 2-3 random points
+        dx = np.zeros((h,w), np.float32)
+        dy = np.zeros((h,w), np.float32)
+        n_pulls = rng.randint(2, 4)
+        for _ in range(n_pulls):
+            px = rng.uniform(0, w)
+            py = rng.uniform(0, h)
+            strength = amp * rng.uniform(0.3, 0.8)
+            dist = np.sqrt((xi-px)**2 + (yi-py)**2) + 1
+            dx += strength * (px - xi) / dist
+            dy += strength * (py - yi) / dist
     else:
         dx = np.zeros((h,w), np.float32)
         dy = np.zeros((h,w), np.float32)
@@ -323,6 +427,8 @@ def generate(day, seed=None):
         t1 = rng.uniform(0.40, 0.65)
     elif e1 == "noise_flow":
         t1 = rng.uniform(0.03, 0.10)
+    elif e1 in ["ripple", "pull"]:
+        t1 = rng.uniform(0.20, 0.40)
     else:
         t1 = rng.uniform(0.40, 0.95)
 
@@ -330,7 +436,10 @@ def generate(day, seed=None):
     excluded = [e1] + INCOMPATIBLE.get(e1, [])
     e2_pool = [e for e in SECONDARY_EFFECTS if e not in excluded]
     e2 = rng.choices(e2_pool, weights=[SECONDARY_WEIGHTS[SECONDARY_EFFECTS.index(e)] for e in e2_pool])[0]
-    t2 = rng.uniform(0.10, 0.25)
+    if e2 in ["ripple", "pull"]:
+        t2 = rng.uniform(0.20, 0.40)
+    else:
+        t2 = rng.uniform(0.10, 0.25)
 
     # Halo (v19)
     halo_color, halo_name = rng.choice(HALO_PALETTE)
