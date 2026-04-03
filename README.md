@@ -13,8 +13,14 @@ No manual composition. No design decisions at runtime. The system decides.
 ## How it works
 
 ```
-word → bold font (random) → tiled grid → displacement pass 1 → displacement pass 2 (subtle) → PNG → R2 → Instagram + Bluesky
+word → bold font (random) → tiled grid → [supersampled 2x] → displacement pass 1 → displacement pass 2 (subtle) → [bilinear warp] → [downscale LANCZOS] → PNG → R2 → Instagram + Bluesky
 ```
+
+**Rendering pipeline:**
+1. **Supersampling (2x)**: All computation (grid, displacement) runs at 2160×3840 for fine detail
+2. **Bilinear interpolation**: Warp operations use 4-neighbor weighted sampling (float coordinates) instead of nearest-neighbor
+3. **Downscale (LANCZOS)**: Final 2x→1x downscale with high-quality antialiasing
+4. **Result**: Smooth edges, no pixelation, natural antialiasing on all displacement effects
 
 **Variables per render:**
 - Font: 13 bold/heavy Google Fonts (open license TTF)
@@ -52,8 +58,10 @@ word → bold font (random) → tiled grid → displacement pass 1 → displacem
 
 `1080 × 1920px` PNG, filename encodes all parameters:
 ```
-shatter52_twist22_violet-ice_halopink3_outfit_bold_fs125_ls-10_THURSDAY_20260319_s890859871.png
+shatter52_twist22_violet-ice_halopink3_outfit_bold_fs125_ls-10_WEDNESDAY_20260403_s890859871.png
 ```
+
+**Note on metadata:** Font size (`fs`) in filename refers to the **final 1080×1920 output**, not the intermediate 2x-supersampled render. All metadata is normalized to the final resolution for accuracy.
 
 ## Usage
 
@@ -123,6 +131,7 @@ LinkedIn: manual posts only (project announcements, milestones).
 | v20 | Full pipeline: gradient + two-pass displacement + halo |
 | v20.1 | Promote to sreda100.py, add incompatible effects filter (chaos/twist) |
 | v20.2 | Add 8 primary effects (glitch, shear, tilt, drift, scatter, fold, melt, wave) + 2 secondary (ripple, pull). Cap chaos/scatter max 50%, ripple max 30% |
+| v20.3 | Add 2x supersampling (render at 2160×3840, downscale LANCZOS) + bilinear interpolation in warp functions. Filename metadata now matches final 1080×1920 output |
 
 ## Stack
 

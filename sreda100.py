@@ -469,16 +469,19 @@ def generate(day, seed=None):
     # Save original dimensions for output
     ORIG_WIDTH, ORIG_HEIGHT = WIDTH, HEIGHT
 
-    # Enable supersampling: render at 2x resolution
-    WIDTH, HEIGHT = ORIG_WIDTH * 2, ORIG_HEIGHT * 2
-
+    # Compute font_size at original resolution (for filename accuracy)
     font_path, font_index, font_label = rng.choice(AVAILABLE_FONTS)
     letter_spacing = rng.randint(-10, 80)
     min_fs = 120 if letter_spacing > 40 else 90
     target_fraction = rng.uniform(0.20, 0.95)
-    font_size = fit_font_to_width(day, font_path, font_index, target_fraction, WIDTH, min_size=min_fs)
-    col_gap = rng.randint(0, max(font_size//3, 1))
-    row_gap = rng.randint(0, max(font_size//4, 1))
+    font_size = fit_font_to_width(day, font_path, font_index, target_fraction, ORIG_WIDTH, min_size=min_fs)
+    font_size_render = font_size * 2  # Scale for 2x supersampling
+
+    # Enable supersampling: render at 2x resolution
+    WIDTH, HEIGHT = ORIG_WIDTH * 2, ORIG_HEIGHT * 2
+
+    col_gap = rng.randint(0, max(font_size_render//3, 1))
+    row_gap = rng.randint(0, max(font_size_render//4, 1))
 
     # Gradient — base color + adjacent neighbor on color wheel
     n = len(PALETTE_WHEEL)
@@ -518,9 +521,9 @@ def generate(day, seed=None):
     halo_r = rng.uniform(3, 10)
     halo_angle = rng.uniform(0, 360)
 
-    # Build
+    # Build (using font_size_render for 2x supersampling)
     grad_img = make_gradient_map(WIDTH, HEIGHT, color_a, color_b, grad_angle)
-    tile = make_word_tile_gradient(day, font_path, font_index, font_size,
+    tile = make_word_tile_gradient(day, font_path, font_index, font_size_render,
                                     letter_spacing, grad_img)
     grid, pad = make_grid(tile, col_gap, row_gap)
 
