@@ -335,21 +335,81 @@ def displacement(t, seed, mode):
 
 
 def warp_rgba(grid, pad, dx, dy):
+    """Warp RGBA grid with bilinear interpolation."""
     gn = np.array(grid.convert("RGBA"), dtype=np.float32)
-    oi = np.tile(np.arange(HEIGHT).reshape(-1,1), (1,WIDTH))
-    oj = np.tile(np.arange(WIDTH), (HEIGHT,1))
-    sy = np.clip(oi+pad+dy, 0, gn.shape[0]-1).astype(np.int32)
-    sx = np.clip(oj+pad+dx, 0, gn.shape[1]-1).astype(np.int32)
-    return Image.fromarray(gn[sy,sx].astype(np.uint8), "RGBA")
+    oi = np.tile(np.arange(HEIGHT).reshape(-1,1), (1,WIDTH)).astype(np.float32)
+    oj = np.tile(np.arange(WIDTH), (HEIGHT,1)).astype(np.float32)
+
+    # Raw float coordinates
+    sy_float = oi + pad + dy
+    sx_float = oj + pad + dx
+
+    # Integer and fractional parts
+    sy_int = np.floor(sy_float).astype(np.int32)
+    sx_int = np.floor(sx_float).astype(np.int32)
+    fy = sy_float - sy_int
+    fx = sx_float - sx_int
+
+    # Clip integer indices to valid range
+    sy0 = np.clip(sy_int, 0, gn.shape[0]-1)
+    sy1 = np.clip(sy_int + 1, 0, gn.shape[0]-1)
+    sx0 = np.clip(sx_int, 0, gn.shape[1]-1)
+    sx1 = np.clip(sx_int + 1, 0, gn.shape[1]-1)
+
+    # Sample 4 neighboring pixels
+    v00 = gn[sy0, sx0]
+    v01 = gn[sy0, sx1]
+    v10 = gn[sy1, sx0]
+    v11 = gn[sy1, sx1]
+
+    # Bilinear interpolation
+    fy = fy[:, :, np.newaxis]  # Broadcast for color channels
+    fx = fx[:, :, np.newaxis]
+    interpolated = (v00 * (1-fy) * (1-fx) +
+                    v01 * (1-fy) * fx +
+                    v10 * fy * (1-fx) +
+                    v11 * fy * fx)
+
+    return Image.fromarray(interpolated.astype(np.uint8), "RGBA")
 
 
 def warp_rgb(img, dx, dy):
+    """Warp RGB image with bilinear interpolation."""
     gn = np.array(img, dtype=np.float32)
-    oi = np.tile(np.arange(HEIGHT).reshape(-1,1), (1,WIDTH))
-    oj = np.tile(np.arange(WIDTH), (HEIGHT,1))
-    sy = np.clip(oi+dy, 0, img.height-1).astype(np.int32)
-    sx = np.clip(oj+dx, 0, img.width-1).astype(np.int32)
-    return Image.fromarray(gn[sy,sx].astype(np.uint8), "RGB")
+    oi = np.tile(np.arange(HEIGHT).reshape(-1,1), (1,WIDTH)).astype(np.float32)
+    oj = np.tile(np.arange(WIDTH), (HEIGHT,1)).astype(np.float32)
+
+    # Raw float coordinates
+    sy_float = oi + dy
+    sx_float = oj + dx
+
+    # Integer and fractional parts
+    sy_int = np.floor(sy_float).astype(np.int32)
+    sx_int = np.floor(sx_float).astype(np.int32)
+    fy = sy_float - sy_int
+    fx = sx_float - sx_int
+
+    # Clip integer indices to valid range
+    sy0 = np.clip(sy_int, 0, img.height-1)
+    sy1 = np.clip(sy_int + 1, 0, img.height-1)
+    sx0 = np.clip(sx_int, 0, img.width-1)
+    sx1 = np.clip(sx_int + 1, 0, img.width-1)
+
+    # Sample 4 neighboring pixels
+    v00 = gn[sy0, sx0]
+    v01 = gn[sy0, sx1]
+    v10 = gn[sy1, sx0]
+    v11 = gn[sy1, sx1]
+
+    # Bilinear interpolation
+    fy = fy[:, :, np.newaxis]  # Broadcast for color channels
+    fx = fx[:, :, np.newaxis]
+    interpolated = (v00 * (1-fy) * (1-fx) +
+                    v01 * (1-fy) * fx +
+                    v10 * fy * (1-fx) +
+                    v11 * fy * fx)
+
+    return Image.fromarray(interpolated.astype(np.uint8), "RGB")
 
 
 def spatial_shift_rgb(img_np, dx_px, dy_px):
@@ -396,6 +456,8 @@ def pick_chaos_t(rng):
 
 
 def generate(day, seed=None):
+    global WIDTH, HEIGHT
+
     if seed is None:
         seed = random.randint(0, 2**32)
     rng = random.Random(seed)
@@ -403,6 +465,12 @@ def generate(day, seed=None):
     day = day.upper()
     if not AVAILABLE_FONTS:
         raise RuntimeError("No fonts found — run on macOS.")
+
+    # Save original dimensions for output
+    ORIG_WIDTH, ORIG_HEIGHT = WIDTH, HEIGHT
+
+    # Enable supersampling: render at 2x resolution
+    WIDTH, HEIGHT = ORIG_WIDTH * 2, ORIG_HEIGHT * 2
 
     font_path, font_index, font_label = rng.choice(AVAILABLE_FONTS)
     letter_spacing = rng.randint(-10, 80)
@@ -466,6 +534,10 @@ def generate(day, seed=None):
 
     # Halo split as final pass
     bg = apply_halo(bg, halo_color, halo_r, halo_angle)
+
+    # Restore original dimensions and downscale with antialiasing (supersampling)
+    WIDTH, HEIGHT = ORIG_WIDTH, ORIG_HEIGHT
+    bg = bg.resize((ORIG_WIDTH, ORIG_HEIGHT), Image.LANCZOS)
 
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     date_str = datetime.now().strftime("%Y%m%d")
