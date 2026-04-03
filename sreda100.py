@@ -72,6 +72,8 @@ PRIMARY_WEIGHTS = [3, 6, 4, 1, 6]
 SECONDARY_EFFECTS = ["chaos", "twist", "shatter"]
 SECONDARY_WEIGHTS = [4, 3, 3]
 
+INCOMPATIBLE = {"chaos": ["twist"], "twist": ["chaos"]}
+
 
 def get_font(path, size, index=0):
     try:
@@ -325,7 +327,8 @@ def generate(day, seed=None):
         t1 = rng.uniform(0.40, 0.95)
 
     # Secondary effect (subtle)
-    e2_pool = [e for e in SECONDARY_EFFECTS if e != e1]
+    excluded = [e1] + INCOMPATIBLE.get(e1, [])
+    e2_pool = [e for e in SECONDARY_EFFECTS if e not in excluded]
     e2 = rng.choices(e2_pool, weights=[SECONDARY_WEIGHTS[SECONDARY_EFFECTS.index(e)] for e in e2_pool])[0]
     t2 = rng.uniform(0.10, 0.25)
 
