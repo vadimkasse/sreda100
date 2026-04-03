@@ -6,7 +6,7 @@ A 100-day generative typography project. Each day produces a unique visual artif
 
 The word is not placed on a canvas. It becomes the canvas.
 
-A grid of the word is tiled across the full frame, then deformed through one or two displacement passes — earthquake, gravity, chaos, shatter, noise_flow — freezing the process at a specific moment in time. The result changes every run: different font, different size, different effect combination, different intensity. Some effect combinations are excluded (e.g., chaos and twist never appear together).
+A grid of the word is tiled across the full frame, then deformed through one or two displacement passes — each combining a primary effect (strong deformation) with an optional secondary effect (subtle overlay). Effects include earthquake, gravity, chaos, shatter, noise_flow, glitch, shear, tilt, drift, scatter, fold, melt, and wave. The result changes every run: different font, different size, different effect combination, different intensity. Some effect combinations are excluded (e.g., chaos and twist never appear together).
 
 No manual composition. No design decisions at runtime. The system decides.
 
@@ -22,16 +22,28 @@ word → bold font (random) → tiled grid → displacement pass 1 → displacem
 - Letter spacing: −10 to +80px
 - Gradient: two adjacent colors from an 11-color palette wheel, random angle
 - Halo: chromatic fringe effect, random color + direction
-- Effect 1: `earthquake` / `gravity` / `chaos` / `shatter` / `noise_flow`
-- Effect 2: subtle secondary deformation (t = 0.10–0.25)
+- Effect 1 (primary): one of 13 displacement effects
+- Effect 2 (secondary): subtle secondary deformation (t = 0.10–0.25)
 - Seed: reproducible via `--seed`
 
-**Displacement effects:**
+**Displacement effects (primary — can also be secondary):**
+- `chaos` — layered sine fields, bimodal intensity (max 50% to avoid mid ranges)
 - `earthquake` — horizontal band shifts, like tectonic layers
-- `gravity` — pull toward a random horizon line
-- `chaos` — layered sine fields, bimodal intensity (low or high, never mid)
 - `shatter` — Voronoi-based fragment displacement
 - `noise_flow` — smooth vector field, liquid motion
+- `gravity` — pull toward a random horizon line
+- `glitch` — sharp asymmetric shifts, VHS artifact look
+- `shear` — diagonal shift across whole frame
+- `tilt` — perspective distortion, as if canvas is on tilted plane
+- `drift` — smooth varying shifts per band (smoother than earthquake)
+- `scatter` — image divided into random blocks, each displaced independently (max 50%)
+- `fold` — image folded along random axis, one half mirrored onto other
+- `melt` — vertical displacement increases top to bottom, letters drip downward
+- `wave` — horizontal sine waves, uniform amplitude across frame
+
+**Displacement effects (secondary only — subtle overlay):**
+- `ripple` — concentric circles from random point (t range 0.20–0.30)
+- `pull` — attraction toward 2–3 random points, letters stretch toward centers (t range 0.20–0.40)
 
 **Incompatible combinations:**
 - `chaos` and `twist` never appear together (conflicting visual patterns)
@@ -80,6 +92,20 @@ Note: Bluesky posting uses direct AT Protocol API calls via HTTP modules (Make's
 
 LinkedIn: manual posts only (project announcements, milestones).
 
+## Intensity ranges
+
+**Primary effects:**
+- `chaos`: bimodal (0.35–0.45 or 0.35–0.50, max 50%)
+- `shatter`: 0.40–0.65
+- `noise_flow`: 0.03–0.10 (subtle)
+- `scatter`: 0.40–0.50 (max 50%, controlled deformation)
+- `ripple`/`pull`: 0.20–0.30 (when primary)
+- All other primary effects: 0.40–0.95
+
+**Secondary effects:**
+- `ripple`/`pull`: 0.20–0.30 (subtle overlay)
+- All other secondary effects: 0.10–0.25
+
 ## Development history
 
 | Version | Key change |
@@ -97,6 +123,7 @@ LinkedIn: manual posts only (project announcements, milestones).
 | v19 | Monochrome halo split as final color pass |
 | v20 | Full pipeline: gradient + two-pass displacement + halo |
 | v20.1 | Promote to sreda100.py, add incompatible effects filter (chaos/twist) |
+| v20.2 | Add 8 primary effects (glitch, shear, tilt, drift, scatter, fold, melt, wave) + 2 secondary (ripple, pull). Cap chaos/scatter max 50%, ripple max 30% |
 
 ## Stack
 
