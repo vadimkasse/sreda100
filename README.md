@@ -17,13 +17,13 @@ word → bold font (random) → tiled grid → displacement pass 1 → displacem
 ```
 
 **Variables per render:**
-- Font: 13 bold/heavy typefaces (Google Fonts, open license)
+- Font: 11 bold/heavy macOS system typefaces
 - Size: fits 20–95% of canvas width, minimum 90px
 - Letter spacing: −10 to +80px
 - Gradient: two adjacent colors from an 11-color palette wheel, random angle
 - Halo: chromatic fringe effect, random color + direction
 - Effect 1 (primary): one of 13 displacement effects
-- Effect 2 (secondary): subtle secondary deformation (t = 0.10–0.25)
+- Effect 2 (secondary): subtle secondary deformation
 - Seed: reproducible via `--seed`
 
 **Displacement effects (primary — can also be secondary):**
@@ -43,7 +43,7 @@ word → bold font (random) → tiled grid → displacement pass 1 → displacem
 
 **Displacement effects (secondary only — subtle overlay):**
 - `ripple` — concentric circles from random point (t range 0.20–0.30)
-- `pull` — attraction toward 2–3 random points, letters stretch toward centers (t range 0.20–0.40)
+- `pull` — attraction toward 2–3 random points, letters stretch toward centers (t range 0.20–0.30)
 
 **Incompatible combinations:**
 - `chaos` and `twist` never appear together (conflicting visual patterns)
@@ -99,7 +99,6 @@ LinkedIn: manual posts only (project announcements, milestones).
 - `shatter`: 0.40–0.65
 - `noise_flow`: 0.03–0.10 (subtle)
 - `scatter`: 0.40–0.50 (max 50%, controlled deformation)
-- `ripple`/`pull`: 0.20–0.30 (when primary)
 - All other primary effects: 0.40–0.95
 
 **Secondary effects:**

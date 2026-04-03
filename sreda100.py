@@ -429,8 +429,6 @@ def generate(day, seed=None):
         t1 = rng.uniform(0.03, 0.10)
     elif e1 == "scatter":
         t1 = rng.uniform(0.40, 0.50)
-    elif e1 in ["ripple", "pull"]:
-        t1 = rng.uniform(0.20, 0.30)
     else:
         t1 = rng.uniform(0.40, 0.95)
 
