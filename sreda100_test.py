@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
 SREDA100 TEST
-8 new displacement effects for testing:
-  wave, ripple, fold, drift, melt, scatter, curl, stretch
+12 new displacement effects for testing:
+  drift, scatter, fold, melt, wave, ripple, glitch, crumple, tilt, pull, shear, explode
 Single pass (no secondary displacement).
 """
 
@@ -62,7 +62,7 @@ HALO_PALETTE = [
     ((140,  80, 255), "violet"),
 ]
 
-TEST_EFFECTS = ["wave", "ripple", "fold", "drift", "melt", "scatter", "curl", "stretch"]
+TEST_EFFECTS = ["drift", "scatter", "fold", "melt", "wave", "ripple", "glitch", "crumple", "tilt", "pull", "shear", "explode"]
 
 
 def get_font(path, size, index=0):
@@ -134,52 +134,15 @@ def make_grid(tile, col_gap=0, row_gap=0):
 
 
 def displacement(t, seed, mode):
-    """Displacement field computation with 8 test effects."""
+    """Displacement field computation with 12 new test effects."""
     rng = np.random.RandomState(seed)
     w, h = WIDTH, HEIGHT
     xi = np.tile(np.arange(w), (h,1)).astype(np.float32)
     yi = np.tile(np.arange(h).reshape(-1,1), (1,w)).astype(np.float32)
     amp = t * 200
 
-    if mode == "wave":
-        # Horizontal sine waves, amplitude increases toward edges
-        dx = np.zeros((h,w), np.float32)
-        dy = np.zeros((h,w), np.float32)
-        n_waves = rng.randint(3, 8)
-        for i in range(n_waves):
-            freq = rng.uniform(0.003, 0.015)
-            phase = rng.uniform(0, 6.28)
-            edge_dist = np.minimum(yi, np.minimum(h-yi, 1)) / h  # distance from edge
-            edge_amp = 1.0 - (edge_dist ** 0.5)  # increase toward edges
-            dx += amp * edge_amp * 0.3 * np.sin(yi*freq + phase)
-
-    elif mode == "ripple":
-        # Concentric circles from a random point
-        cx = rng.uniform(0, w)
-        cy = rng.uniform(0, h)
-        dist = np.sqrt((xi-cx)**2 + (yi-cy)**2)
-        freq = rng.uniform(0.005, 0.020)
-        phase = rng.uniform(0, 6.28)
-        wave = np.sin(dist*freq + phase)
-        dx = amp * 0.5 * wave * (xi-cx) / (dist + 1)
-        dy = amp * 0.5 * wave * (yi-cy) / (dist + 1)
-
-    elif mode == "fold":
-        # Mirror one half onto the other along a random axis
-        fold_axis = rng.choice(["vertical", "horizontal"])
-        if fold_axis == "vertical":
-            fold_x = rng.uniform(w*0.2, w*0.8)
-            dist_from_fold = np.abs(xi - fold_x)
-            dx = amp * 0.8 * np.sign(xi - fold_x) * (1.0 - np.exp(-dist_from_fold/100))
-            dy = np.zeros((h,w), np.float32)
-        else:
-            fold_y = rng.uniform(h*0.2, h*0.8)
-            dist_from_fold = np.abs(yi - fold_y)
-            dy = amp * 0.8 * np.sign(yi - fold_y) * (1.0 - np.exp(-dist_from_fold/100))
-            dx = np.zeros((h,w), np.float32)
-
-    elif mode == "drift":
-        # Smooth varying random shifts per band (smoother than earthquake)
+    if mode == "drift":
+        # Smooth varying shifts per band
         dx = np.zeros((h,w), np.float32)
         dy = np.zeros((h,w), np.float32)
         n_bands = rng.randint(6, 15)
@@ -188,19 +151,13 @@ def displacement(t, seed, mode):
         for i in range(n_bands):
             y0, y1 = i*bh, (i+1)*bh
             target_shift = rng.uniform(-amp, amp)
-            shift = prev_shift + (target_shift - prev_shift) * 0.6  # smooth interpolation
+            shift = prev_shift + (target_shift - prev_shift) * 0.6
             mask_b = (yi >= y0) & (yi < y1)
             dx += mask_b * shift
             prev_shift = shift
 
-    elif mode == "melt":
-        # Vertical displacement increases from top to bottom ("drip" effect)
-        dx = np.zeros((h,w), np.float32)
-        melt_factor = yi / h  # 0 at top, 1 at bottom
-        dy = amp * melt_factor * 0.7 + amp * 0.3 * np.sin(xi*0.01 + rng.uniform(0, 6.28))
-
     elif mode == "scatter":
-        # Small random blocks each get independent displacement
+        # Random blocks with independent displacement
         dx = np.zeros((h,w), np.float32)
         dy = np.zeros((h,w), np.float32)
         block_size = rng.randint(30, 80)
@@ -213,42 +170,116 @@ def displacement(t, seed, mode):
                 dx[by:by_end, bx:bx_end] = bdx
                 dy[by:by_end, bx:bx_end] = bdy
 
-    elif mode == "curl":
-        # Vector field with 2-3 curl centers, creates vortex motion
+    elif mode == "fold":
+        # Mirror along random axis
         dx = np.zeros((h,w), np.float32)
         dy = np.zeros((h,w), np.float32)
-        n_curls = rng.randint(2, 4)
-        for _ in range(n_curls):
+        fold_axis = rng.choice(["vertical", "horizontal"])
+        if fold_axis == "vertical":
+            fold_x = rng.uniform(w*0.2, w*0.8)
+            dist_from_fold = np.abs(xi - fold_x)
+            dx = amp * 0.8 * np.sign(xi - fold_x) * (1.0 - np.exp(-dist_from_fold/100))
+        else:
+            fold_y = rng.uniform(h*0.2, h*0.8)
+            dist_from_fold = np.abs(yi - fold_y)
+            dy = amp * 0.8 * np.sign(yi - fold_y) * (1.0 - np.exp(-dist_from_fold/100))
+
+    elif mode == "melt":
+        # Vertical displacement increases top to bottom
+        dx = np.zeros((h,w), np.float32)
+        melt_factor = yi / h
+        dy = amp * melt_factor * 0.7 + amp * 0.3 * np.sin(xi*0.01 + rng.uniform(0, 6.28))
+
+    elif mode == "wave":
+        # Horizontal sine waves, uniform amplitude
+        dx = np.zeros((h,w), np.float32)
+        dy = np.zeros((h,w), np.float32)
+        n_waves = rng.randint(3, 8)
+        for i in range(n_waves):
+            freq = rng.uniform(0.003, 0.015)
+            phase = rng.uniform(0, 6.28)
+            dx += amp * 0.3 * np.sin(yi*freq + phase) / n_waves
+
+    elif mode == "ripple":
+        # Concentric circles from random point, subtle
+        cx = rng.uniform(0, w)
+        cy = rng.uniform(0, h)
+        dist = np.sqrt((xi-cx)**2 + (yi-cy)**2)
+        freq = rng.uniform(0.005, 0.020)
+        phase = rng.uniform(0, 6.28)
+        wave = np.sin(dist*freq + phase)
+        dx = amp * 0.3 * wave * (xi-cx) / (dist + 1)
+        dy = amp * 0.3 * wave * (yi-cy) / (dist + 1)
+
+    elif mode == "glitch":
+        # Sharp asymmetric shifts, VHS artifact
+        dx = np.zeros((h,w), np.float32)
+        dy = np.zeros((h,w), np.float32)
+        n_glitches = rng.randint(4, 12)
+        for _ in range(n_glitches):
+            y0 = rng.randint(0, h)
+            h_glitch = rng.randint(20, 80)
+            y1 = min(y0 + h_glitch, h)
+            shift = rng.uniform(-amp, amp) * rng.choice([-1, 1])
+            mask_g = (yi >= y0) & (yi < y1)
+            dx += mask_g * shift * (1 + rng.uniform(-0.5, 0.5))
+
+    elif mode == "crumple":
+        # Local random deformations, crumpled paper look
+        dx = np.zeros((h,w), np.float32)
+        dy = np.zeros((h,w), np.float32)
+        n_crumples = rng.randint(8, 20)
+        for _ in range(n_crumples):
             cx = rng.uniform(0, w)
             cy = rng.uniform(0, h)
-            radius = rng.uniform(100, 300)
-            direction = rng.choice([-1, 1])
-            dist = np.sqrt((xi-cx)**2 + (yi-cy)**2) + 1
+            radius = rng.uniform(50, 200)
+            strength = rng.uniform(-amp*0.5, amp*0.5)
+            dist = np.sqrt((xi-cx)**2 + (yi-cy)**2)
+            influence = np.exp(-(dist**2) / (radius**2 + 1))
             angle = np.arctan2(yi-cy, xi-cx)
-            strength = np.exp(-dist**2 / (radius**2 + 1))
-            curl_dx = direction * strength * -np.sin(angle) * amp
-            curl_dy = direction * strength * np.cos(angle) * amp
-            dx += curl_dx * 0.5
-            dy += curl_dy * 0.5
+            dx += influence * strength * np.cos(angle)
+            dy += influence * strength * np.sin(angle)
 
-    elif mode == "stretch":
-        # Non-uniform scaling — elongate or compress along one axis
-        axis = rng.choice(["horizontal", "vertical"])
-        stretch_amount = rng.uniform(0.3, 0.9)
-        center = rng.uniform(0.3, 0.7)
+    elif mode == "tilt":
+        # Perspective distortion, canvas on tilted plane
+        dx = np.zeros((h,w), np.float32)
+        dy = np.zeros((h,w), np.float32)
+        tilt_x = rng.uniform(-0.3, 0.3)
+        tilt_y = rng.uniform(-0.3, 0.3)
+        dx = amp * tilt_x * (yi / h - 0.5)
+        dy = amp * tilt_y * (xi / w - 0.5)
 
-        if axis == "horizontal":
-            # Stretch horizontally
-            dist_from_center = np.abs(xi/w - center)
-            scale = 1.0 + stretch_amount * np.exp(-dist_from_center**2 * 10)
-            dx = (xi - xi*scale) * amp * 0.5
-            dy = np.zeros((h,w), np.float32)
-        else:
-            # Stretch vertically
-            dist_from_center = np.abs(yi/h - center)
-            scale = 1.0 + stretch_amount * np.exp(-dist_from_center**2 * 10)
-            dy = (yi - yi*scale) * amp * 0.5
-            dx = np.zeros((h,w), np.float32)
+    elif mode == "pull":
+        # Attraction toward 2-3 random points
+        dx = np.zeros((h,w), np.float32)
+        dy = np.zeros((h,w), np.float32)
+        n_pulls = rng.randint(2, 4)
+        for _ in range(n_pulls):
+            px = rng.uniform(0, w)
+            py = rng.uniform(0, h)
+            strength = amp * rng.uniform(0.3, 0.8)
+            dist = np.sqrt((xi-px)**2 + (yi-py)**2) + 1
+            dx += strength * (px - xi) / dist
+            dy += strength * (py - yi) / dist
+
+    elif mode == "shear":
+        # Diagonal shift across whole frame
+        dx = np.zeros((h,w), np.float32)
+        dy = np.zeros((h,w), np.float32)
+        shear_amount = rng.uniform(-0.5, 0.5)
+        dx = amp * shear_amount * (yi / h - 0.5)
+        dy = amp * shear_amount * (xi / w - 0.5)
+
+    elif mode == "explode":
+        # Radial outward displacement
+        cx = w / 2 + rng.uniform(-w*0.2, w*0.2)
+        cy = h / 2 + rng.uniform(-h*0.2, h*0.2)
+        dist = np.sqrt((xi-cx)**2 + (yi-cy)**2) + 1
+        angle = np.arctan2(yi-cy, xi-cx)
+        radial = amp * 0.7 * np.exp(-dist / (min(w,h)*0.3))
+        dx = radial * np.cos(angle)
+        dy = radial * np.sin(angle)
+
     else:
         dx = np.zeros((h,w), np.float32)
         dy = np.zeros((h,w), np.float32)
@@ -331,17 +362,16 @@ def generate(day, seed=None, effect_override=None):
     # Primary effect (use override if provided)
     if effect_override:
         e1 = effect_override
-        t1 = rng.uniform(0.40, 0.80)  # reasonable intensity for test effects
     else:
         e1 = rng.choice(TEST_EFFECTS)
-        t1 = rng.uniform(0.40, 0.80)
+    t1 = rng.uniform(0.40, 0.95)
 
     # Halo
     halo_color, halo_name = rng.choice(HALO_PALETTE)
     halo_r = rng.uniform(3, 10)
     halo_angle = rng.uniform(0, 360)
 
-    # Build (single pass only)
+    # Build (single pass only — no secondary effect)
     grad_img = make_gradient_map(WIDTH, HEIGHT, color_a, color_b, grad_angle)
     tile = make_word_tile_gradient(day, font_path, font_index, font_size,
                                     letter_spacing, grad_img)
@@ -372,12 +402,12 @@ if __name__ == "__main__":
     parser.add_argument("--day", default="WEDNESDAY")
     parser.add_argument("--seed", type=int, default=None)
     parser.add_argument("--batch", type=int, default=20)
-    parser.add_argument("--effect", type=str, default=None, help="Use only this effect (wave, ripple, fold, drift, melt, scatter, curl, stretch)")
-    parser.add_argument("--test-all", action="store_true", help="Test all 8 effects × 10 iterations each")
+    parser.add_argument("--effect", type=str, default=None, help="Use only this effect")
+    parser.add_argument("--test-all", action="store_true", help="Test all 12 effects × 10 iterations each (120 files)")
     args = parser.parse_args()
 
     if args.test_all:
-        print(f"Testing all {len(TEST_EFFECTS)} effects × 10 iterations (80 total)...")
+        print(f"Testing all {len(TEST_EFFECTS)} effects × 10 iterations (120 total)...")
         for effect_name in TEST_EFFECTS:
             effect_dir = os.path.join(OUTPUT_DIR, f"test_{effect_name}")
             os.makedirs(effect_dir, exist_ok=True)
@@ -385,7 +415,6 @@ if __name__ == "__main__":
             for i in range(10):
                 seed = random.randint(0, 2**32)
                 out_path = generate("WEDNESDAY", seed=seed, effect_override=effect_name)
-                # Move to subdirectory
                 fname = os.path.basename(out_path)
                 new_path = os.path.join(effect_dir, fname)
                 os.rename(out_path, new_path)
