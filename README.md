@@ -129,7 +129,7 @@ LinkedIn: manual posts only (project announcements, milestones).
 - Python 3.x
 - Pillow — image rendering and composition
 - NumPy — displacement field computation
-- Google Fonts (open license TTF) — 13 bold/heavy typefaces
+- macOS system fonts — 11 bold/heavy typefaces
 - Modal — serverless endpoint
 - Cloudflare R2 — image storage and public CDN
 - Make — scheduling and social posting
