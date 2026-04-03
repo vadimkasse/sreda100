@@ -6,7 +6,7 @@ A 100-day generative typography project. Each day produces a unique visual artif
 
 The word is not placed on a canvas. It becomes the canvas.
 
-A grid of the word is tiled across the full frame, then deformed through one or two displacement passes — earthquake, gravity, chaos, shatter — freezing the process at a specific moment in time. The result changes every run: different font, different size, different effect combination, different intensity.
+A grid of the word is tiled across the full frame, then deformed through one or two displacement passes — earthquake, gravity, chaos, shatter, noise_flow — freezing the process at a specific moment in time. The result changes every run: different font, different size, different effect combination, different intensity. Some effect combinations are excluded (e.g., chaos and twist never appear together).
 
 No manual composition. No design decisions at runtime. The system decides.
 
@@ -33,6 +33,9 @@ word → bold font (random) → tiled grid → displacement pass 1 → displacem
 - `shatter` — Voronoi-based fragment displacement
 - `noise_flow` — smooth vector field, liquid motion
 
+**Incompatible combinations:**
+- `chaos` and `twist` never appear together (conflicting visual patterns)
+
 ## Output
 
 `1080 × 1920px` PNG, filename encodes all parameters:
@@ -46,13 +49,13 @@ shatter52_twist22_violet-ice_halopink3_outfit_bold_fs125_ls-10_THURSDAY_20260319
 pip install Pillow numpy
 
 # Generate 20 variants for today
-python sreda100_v20.py
+python sreda100.py
 
 # Specific day, batch of 40
-python sreda100_v20.py --day TUESDAY --batch 40
+python sreda100.py --day TUESDAY --batch 40
 
 # Reproducible result
-python sreda100_v20.py --day MONDAY --seed 3846787293
+python sreda100.py --day MONDAY --seed 3846787293
 ```
 
 ## Automation pipeline
@@ -93,6 +96,7 @@ LinkedIn: manual posts only (project announcements, milestones).
 | v17 | Gradient applied to word tile |
 | v19 | Monochrome halo split as final color pass |
 | v20 | Full pipeline: gradient + two-pass displacement + halo |
+| v20.1 | Promote to sreda100.py, add incompatible effects filter (chaos/twist) |
 
 ## Stack
 
