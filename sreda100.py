@@ -388,7 +388,7 @@ def apply_halo(img_rgb, halo_color, halo_r, halo_angle_deg):
 
 
 def pick_chaos_t(rng):
-    return rng.uniform(0.35, 0.45) if rng.random() < 0.5 else rng.uniform(0.83, 0.95)
+    return rng.uniform(0.35, 0.45) if rng.random() < 0.5 else rng.uniform(0.35, 0.50)
 
 
 def generate(day, seed=None):
@@ -427,8 +427,10 @@ def generate(day, seed=None):
         t1 = rng.uniform(0.40, 0.65)
     elif e1 == "noise_flow":
         t1 = rng.uniform(0.03, 0.10)
+    elif e1 == "scatter":
+        t1 = rng.uniform(0.40, 0.50)
     elif e1 in ["ripple", "pull"]:
-        t1 = rng.uniform(0.20, 0.40)
+        t1 = rng.uniform(0.20, 0.30)
     else:
         t1 = rng.uniform(0.40, 0.95)
 
@@ -437,7 +439,7 @@ def generate(day, seed=None):
     e2_pool = [e for e in SECONDARY_EFFECTS if e not in excluded]
     e2 = rng.choices(e2_pool, weights=[SECONDARY_WEIGHTS[SECONDARY_EFFECTS.index(e)] for e in e2_pool])[0]
     if e2 in ["ripple", "pull"]:
-        t2 = rng.uniform(0.20, 0.40)
+        t2 = rng.uniform(0.20, 0.30)
     else:
         t2 = rng.uniform(0.10, 0.25)
 
