@@ -331,7 +331,7 @@ def apply_halo(img_rgb, halo_color, halo_r, halo_angle_deg):
     return Image.fromarray(out.astype(np.uint8), "RGB")
 
 
-def generate(day, seed=None, effect_override=None):
+def generate(day, seed=None, effect_override=None, t_min=0.40, t_max=0.95):
     """Generate single image. If effect_override, use only that effect."""
     if seed is None:
         seed = random.randint(0, 2**32)
@@ -364,7 +364,7 @@ def generate(day, seed=None, effect_override=None):
         e1 = effect_override
     else:
         e1 = rng.choice(TEST_EFFECTS)
-    t1 = rng.uniform(0.40, 0.95)
+    t1 = rng.uniform(t_min, t_max)
 
     # Halo
     halo_color, halo_name = rng.choice(HALO_PALETTE)
