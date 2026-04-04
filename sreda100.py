@@ -266,18 +266,73 @@ def displacement(t, seed, mode):
             dx += mask_b * shift
             prev_shift = shift
     elif mode == "scatter":
-        # Random blocks with independent displacement
+        # Random blocks with independent displacement + smooth blending of neighbors
         dx = np.zeros((h,w), np.float32)
         dy = np.zeros((h,w), np.float32)
-        block_size = rng.randint(30, 80)
-        for by in range(0, h, block_size):
-            for bx in range(0, w, block_size):
-                bdx = rng.uniform(-amp, amp) * 0.5
-                bdy = rng.uniform(-amp, amp) * 0.5
-                by_end = min(by + block_size, h)
-                bx_end = min(bx + block_size, w)
-                dx[by:by_end, bx:bx_end] = bdx
-                dy[by:by_end, bx:bx_end] = bdy
+        block_size = rng.randint(80, 200)  # 2-3x larger blocks
+        blend_width = block_size // 4  # Smooth transition zone
+
+        # Generate block displacements
+        blocks_y = (h + block_size - 1) // block_size
+        blocks_x = (w + block_size - 1) // block_size
+        block_disp = np.zeros((blocks_y, blocks_x, 2), dtype=np.float32)
+        for by in range(blocks_y):
+            for bx in range(blocks_x):
+                block_disp[by, bx, 0] = rng.uniform(-amp, amp) * 0.5
+                block_disp[by, bx, 1] = rng.uniform(-amp, amp) * 0.5
+
+        # Apply with smooth blending of neighboring blocks at boundaries
+        for y in range(h):
+            for x in range(w):
+                by = y // block_size
+                bx = x // block_size
+                by = min(by, blocks_y - 1)
+                bx = min(bx, blocks_x - 1)
+
+                local_y = y % block_size
+                local_x = x % block_size
+
+                # Blend current block with neighbors
+                weights = []
+                disps_x = []
+                disps_y = []
+
+                # Current block always included
+                weights.append(1.0)
+                disps_x.append(block_disp[by, bx, 0])
+                disps_y.append(block_disp[by, bx, 1])
+
+                # Top neighbor
+                if by > 0 and local_y < blend_width:
+                    weight = 1.0 - (local_y / blend_width)
+                    weights.append(weight)
+                    disps_x.append(block_disp[by - 1, bx, 0])
+                    disps_y.append(block_disp[by - 1, bx, 1])
+
+                # Bottom neighbor
+                if by < blocks_y - 1 and (block_size - local_y - 1) < blend_width:
+                    weight = 1.0 - ((block_size - local_y - 1) / blend_width)
+                    weights.append(weight)
+                    disps_x.append(block_disp[by + 1, bx, 0])
+                    disps_y.append(block_disp[by + 1, bx, 1])
+
+                # Left neighbor
+                if bx > 0 and local_x < blend_width:
+                    weight = 1.0 - (local_x / blend_width)
+                    weights.append(weight)
+                    disps_x.append(block_disp[by, bx - 1, 0])
+                    disps_y.append(block_disp[by, bx - 1, 1])
+
+                # Right neighbor
+                if bx < blocks_x - 1 and (block_size - local_x - 1) < blend_width:
+                    weight = 1.0 - ((block_size - local_x - 1) / blend_width)
+                    weights.append(weight)
+                    disps_x.append(block_disp[by, bx + 1, 0])
+                    disps_y.append(block_disp[by, bx + 1, 1])
+
+                total_weight = sum(weights)
+                dx[y, x] = sum(w * dx_val for w, dx_val in zip(weights, disps_x)) / total_weight
+                dy[y, x] = sum(w * dy_val for w, dy_val in zip(weights, disps_y)) / total_weight
     elif mode == "fold":
         # Mirror along random axis
         dx = np.zeros((h,w), np.float32)
@@ -452,7 +507,7 @@ def apply_halo(img_rgb, halo_color, halo_r, halo_angle_deg):
 
 
 def pick_chaos_t(rng):
-    return rng.uniform(0.35, 0.45) if rng.random() < 0.5 else rng.uniform(0.35, 0.50)
+    return rng.uniform(0.30, 0.42) if rng.random() < 0.5 else rng.uniform(0.83, 0.88)
 
 
 def generate(day, seed=None):
@@ -473,15 +528,15 @@ def generate(day, seed=None):
     font_path, font_index, font_label = rng.choice(AVAILABLE_FONTS)
     letter_spacing = rng.randint(-10, 80)
     min_fs = 120 if letter_spacing > 40 else 90
-    target_fraction = rng.uniform(0.20, 0.95)
+    target_fraction = rng.uniform(0.55, 0.95)
     font_size = fit_font_to_width(day, font_path, font_index, target_fraction, ORIG_WIDTH, min_size=min_fs)
     font_size_render = font_size * 2  # Scale for 2x supersampling
 
     # Enable supersampling: render at 2x resolution
     WIDTH, HEIGHT = ORIG_WIDTH * 2, ORIG_HEIGHT * 2
 
-    col_gap = rng.randint(0, max(font_size_render//3, 1))
-    row_gap = rng.randint(0, max(font_size_render//4, 1))
+    col_gap = rng.randint(0, max(font_size_render//8, 1))
+    row_gap = rng.randint(0, max(font_size_render//8, 1))
 
     # Gradient — base color + adjacent neighbor on color wheel
     n = len(PALETTE_WHEEL)
@@ -504,6 +559,8 @@ def generate(day, seed=None):
         t1 = rng.uniform(0.03, 0.10)
     elif e1 == "scatter":
         t1 = rng.uniform(0.40, 0.50)
+    elif e1 == "gravity":
+        t1 = rng.uniform(0.40, 0.65)
     else:
         t1 = rng.uniform(0.40, 0.95)
 
