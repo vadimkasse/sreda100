@@ -189,7 +189,7 @@ def displacement(t, seed, mode):
     elif mode == "shatter":
         dx = np.zeros((h,w), np.float32)
         dy = np.zeros((h,w), np.float32)
-        n = rng.randint(12, 40)
+        n = rng.randint(6, 20)
         px = rng.uniform(0, w, n)
         py = rng.uniform(0, h, n)
         sox = rng.uniform(-amp, amp, n)
@@ -554,7 +554,7 @@ def generate(day, seed=None):
     if e1 == "chaos":
         t1 = pick_chaos_t(rng)
     elif e1 == "shatter":
-        t1 = rng.uniform(0.40, 0.65)
+        t1 = rng.uniform(0.20, 0.40)
     elif e1 == "noise_flow":
         t1 = rng.uniform(0.03, 0.10)
     elif e1 == "scatter":
