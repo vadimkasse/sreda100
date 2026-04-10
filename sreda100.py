@@ -70,14 +70,14 @@ HALO_PALETTE = [
     ((140,  80, 255), "violet"),
 ]
 
-PRIMARY_EFFECTS = ["chaos", "earthquake", "shatter", "noise_flow", "gravity",
+PRIMARY_EFFECTS = ["shatter", "earthquake", "columns", "prism", "slices", "blocks",
                    "glitch", "shear", "tilt", "drift", "scatter", "fold", "melt", "wave"]
-PRIMARY_WEIGHTS = [3, 6, 4, 1, 6, 2, 2, 2, 3, 2, 2, 2, 2]
+PRIMARY_WEIGHTS = [4, 6, 4, 3, 3, 4, 2, 2, 2, 3, 2, 2, 2, 2]
 
-SECONDARY_EFFECTS = ["chaos", "twist", "shatter", "ripple", "pull"]
-SECONDARY_WEIGHTS = [4, 3, 3, 2, 2]
+SECONDARY_EFFECTS = ["columns", "prism", "slices", "blocks", "shatter"]
+SECONDARY_WEIGHTS = [4, 3, 3, 4, 3]
 
-INCOMPATIBLE = {"chaos": ["twist"], "twist": ["chaos"]}
+INCOMPATIBLE = {}
 
 
 def get_font(path, size, index=0):
@@ -88,14 +88,14 @@ def get_font(path, size, index=0):
 
 
 def fit_font_to_width(word, font_path, font_index, target_fraction, canvas_w, min_size=90):
-    lo, hi = min_size, 200
+    lo, hi = min_size, 400
     for _ in range(20):
         mid = (lo + hi) // 2
         font = get_font(font_path, mid, font_index)
         tmp = Image.new("RGB", (1, 1))
         bb = ImageDraw.Draw(tmp).textbbox((0, 0), word, font=font)
         lo, hi = (mid, hi) if bb[2]-bb[0] < target_fraction*canvas_w else (lo, mid)
-    return min(lo, 200)
+    return min(lo, 400)
 
 
 def make_gradient_map(width, height, color_a, color_b, angle_deg):
@@ -142,10 +142,12 @@ def make_grid(tile, col_gap=0, row_gap=0):
     pad = max(WIDTH, HEIGHT)
     gw, gh = WIDTH+pad*2, HEIGHT+pad*2
     grid = Image.new("RGBA", (gw, gh), (0,0,0,0))
-    sx, sy = max(tile.width+col_gap,1), max(tile.height+row_gap,1)
-    for gy in range(-pad, gh, sy):
-        for gx in range(-pad, gw, sx):
-            grid.paste(tile, (gx, gy), tile)
+    
+    # Place only one tile exactly in the center of the padded grid
+    gx = pad + WIDTH // 2 - tile.width // 2
+    gy = pad + HEIGHT // 2 - tile.height // 2
+    grid.paste(tile, (gx, gy), tile)
+    
     return grid, pad
 
 
@@ -269,7 +271,7 @@ def displacement(t, seed, mode):
         # Random blocks with independent displacement + smooth blending of neighbors
         dx = np.zeros((h,w), np.float32)
         dy = np.zeros((h,w), np.float32)
-        block_size = rng.randint(80, 200)  # 2-3x larger blocks
+        block_size = rng.randint(200, 500)  # Larger blocks to avoid fine ripples
         blend_width = block_size // 4  # Smooth transition zone
 
         # Generate block displacements
@@ -360,6 +362,72 @@ def displacement(t, seed, mode):
             freq = rng.uniform(0.003, 0.015)
             phase = rng.uniform(0, 6.28)
             dx += amp * 0.3 * np.sin(yi*freq + phase) / n_waves
+    elif mode == "staircase":
+        # Blocky quantized shifts (digital glitch look)
+        dx = np.zeros((h,w), np.float32)
+        dy = np.zeros((h,w), np.float32)
+        for _ in range(5):
+            f = rng.uniform(0.002, 0.008)
+            a = amp * rng.uniform(0.5, 1.2)
+            # Quantize sine wave to create steps
+            dx += a * np.round(np.sin(yi*f + rng.uniform(0,6.28)) * 3) / 3
+            dy += a * np.round(np.cos(xi*f + rng.uniform(0,6.28)) * 3) / 3
+    elif mode == "columns":
+        # Vertical bands (vertical earthquake)
+        dx = np.zeros((h,w), np.float32)
+        dy = np.zeros((h,w), np.float32)
+        n_cols = rng.randint(8, 20)
+        bw = w // n_cols
+        for i in range(n_cols):
+            x0, x1 = i*bw, (i+1)*bw
+            shift = rng.uniform(-amp, amp)
+            mask_b = (xi >= x0) & (xi < x1)
+            dy += mask_b * shift
+    elif mode == "prism":
+        # Large angular facets (crystal look) - improved distribution
+        dx = np.zeros((h,w), np.float32)
+        dy = np.zeros((h,w), np.float32)
+        n_facets = rng.randint(3, 6)
+        for _ in range(n_facets):
+            angle = rng.uniform(0, 2 * math.pi)
+            nx, ny = math.cos(angle), math.sin(angle)
+            proj = xi * nx + yi * ny
+            # Pick mid between min and max projection to ensure the line cuts the canvas anywhere
+            p_min, p_max = proj.min(), proj.max()
+            mid = rng.uniform(p_min + (p_max-p_min)*0.15, p_max - (p_max-p_min)*0.15)
+            shift = rng.uniform(-amp, amp)
+            mask = proj > mid
+            dx += mask * shift * nx
+            dy += mask * shift * ny
+    elif mode == "slices":
+        # Diagonal parallel bands
+        dx = np.zeros((h,w), np.float32)
+        dy = np.zeros((h,w), np.float32)
+        angle = rng.uniform(0, math.pi)
+        nx, ny = math.cos(angle), math.sin(angle)
+        proj = xi * nx + yi * ny
+        n_slices = rng.randint(6, 15)
+        slice_w = (proj.max() - proj.min()) / n_slices
+        for i in range(n_slices):
+            p0 = proj.min() + i * slice_w
+            p1 = p0 + slice_w
+            mask = (proj >= p0) & (proj < p1)
+            shift = rng.uniform(-amp, amp)
+            dx += mask * shift * nx
+            dy += mask * shift * ny
+    elif mode == "blocks":
+        # Discrete rectangular block shifts - improved distribution
+        dx = np.zeros((h,w), np.float32)
+        dy = np.zeros((h,w), np.float32)
+        for _ in range(rng.randint(10, 20)):
+            bw = rng.uniform(w * 0.1, w * 0.6)
+            bh = rng.uniform(h * 0.05, h * 0.25)
+            # Allow starting off-screen to cover edges
+            bx = rng.uniform(-bw * 0.5, w)
+            by = rng.uniform(-bh * 0.5, h)
+            mask = (xi >= bx) & (xi < bx+bw) & (yi >= by) & (yi < by+bh)
+            dx += mask * rng.uniform(-amp, amp)
+            dy += mask * rng.uniform(-amp * 0.5, amp * 0.5)
     elif mode == "ripple":
         # Concentric circles from random point, subtle
         cx = rng.uniform(0, w)
@@ -506,8 +574,36 @@ def apply_halo(img_rgb, halo_color, halo_r, halo_angle_deg):
     return Image.fromarray(out.astype(np.uint8), "RGB")
 
 
+def apply_chromatic_aberration(img_rgb, max_strength):
+    """
+    Asymmetric channel shift: R and B move independently with their own vectors.
+    """
+    if max_strength <= 0:
+        return img_rgb
+    
+    arr = np.array(img_rgb)
+    out = np.zeros_like(arr)
+    
+    # Green channel stays as the anchor
+    out[:,:,1] = arr[:,:,1]
+    
+    # Red channel: independent random vector
+    angle_r = random.uniform(0, 2 * math.pi)
+    dist_r = random.uniform(max_strength * 0.4, max_strength)
+    dx_r, dy_r = dist_r * math.cos(angle_r), dist_r * math.sin(angle_r)
+    out[:,:,0] = spatial_shift_rgb(arr[:,:,0:1], dx_r, dy_r)[:,:,0]
+    
+    # Blue channel: another independent random vector
+    angle_b = random.uniform(0, 2 * math.pi)
+    dist_b = random.uniform(max_strength * 0.4, max_strength)
+    dx_b, dy_b = dist_b * math.cos(angle_b), dist_b * math.sin(angle_b)
+    out[:,:,2] = spatial_shift_rgb(arr[:,:,2:3], dx_b, dy_b)[:,:,0]
+    
+    return Image.fromarray(out, "RGB")
+
+
 def pick_chaos_t(rng):
-    return rng.uniform(0.30, 0.42) if rng.random() < 0.5 else rng.uniform(0.83, 0.88)
+    return rng.uniform(0.15, 0.25)
 
 
 def generate(day, seed=None):
@@ -551,27 +647,29 @@ def generate(day, seed=None):
 
     # Primary effect
     e1 = rng.choices(PRIMARY_EFFECTS, weights=PRIMARY_WEIGHTS)[0]
-    if e1 == "chaos":
-        t1 = pick_chaos_t(rng)
-    elif e1 == "shatter":
+    if e1 == "shatter":
         t1 = rng.uniform(0.20, 0.40)
-    elif e1 == "noise_flow":
-        t1 = rng.uniform(0.03, 0.10)
-    elif e1 == "scatter":
-        t1 = rng.uniform(0.40, 0.50)
-    elif e1 == "gravity":
-        t1 = rng.uniform(0.40, 0.65)
+    elif e1 == "columns":
+        t1 = rng.uniform(0.20, 0.55)
+    elif e1 == "slices":
+        t1 = rng.uniform(0.20, 0.40)
+    elif e1 == "prism":
+        t1 = rng.uniform(0.30, 0.60)
+    elif e1 == "blocks":
+        t1 = rng.uniform(0.30, 0.60)
+    elif e1 == "wave":
+        t1 = rng.uniform(0.10, 0.30)
     else:
-        t1 = rng.uniform(0.40, 0.95)
+        t1 = rng.uniform(0.30, 0.80)
 
     # Secondary effect (subtle)
-    excluded = [e1] + INCOMPATIBLE.get(e1, [])
-    e2_pool = [e for e in SECONDARY_EFFECTS if e not in excluded]
+    e2_pool = [e for e in SECONDARY_EFFECTS if e != e1]
     e2 = rng.choices(e2_pool, weights=[SECONDARY_WEIGHTS[SECONDARY_EFFECTS.index(e)] for e in e2_pool])[0]
-    if e2 in ["ripple", "pull"]:
-        t2 = rng.uniform(0.20, 0.30)
-    else:
-        t2 = rng.uniform(0.10, 0.25)
+    t2 = rng.uniform(0.10, 0.25)
+
+    # Pass 3: Chromatic aberration
+    ca_strength = rng.uniform(18, 54)
+
 
     # Halo (v19)
     halo_color, halo_name = rng.choice(HALO_PALETTE)
@@ -594,6 +692,9 @@ def generate(day, seed=None):
 
     # Halo split as final pass
     bg = apply_halo(bg, halo_color, halo_r, halo_angle)
+    
+    # Chromatic aberration
+    bg = apply_chromatic_aberration(bg, ca_strength)
 
     # Restore original dimensions and downscale with antialiasing (supersampling)
     WIDTH, HEIGHT = ORIG_WIDTH, ORIG_HEIGHT
@@ -602,6 +703,7 @@ def generate(day, seed=None):
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     date_str = datetime.now().strftime("%Y%m%d")
     fname = (f"{e1}{int(t1*100)}_{e2}{int(t2*100)}"
+             f"_ca{int(ca_strength)}"
              f"_{grad_label}_halo{halo_name}{int(halo_r)}"
              f"_{font_label}_fs{font_size}_ls{letter_spacing}"
              f"_{day}_{date_str}_s{seed}.png")
