@@ -38,7 +38,7 @@ image = (
     # Put your .ttf / .ttc files in repo/fonts/ — see README for which ones.
     .add_local_dir("fonts", remote_path="/fonts")
     # The generation script lives next to this file in the repo.
-    .add_local_file("sreda100_v20.py", remote_path="/root/sreda100_v20.py")
+    .add_local_file("sreda100.py", remote_path="/root/sreda100_v20.py")
 )
 
 app = modal.App("sreda100", image=image)
