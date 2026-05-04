@@ -1,165 +1,172 @@
 """
-modal_app.py — SREDA100 infrastructure layer
-
-What this does:
-  - Exposes generate() from sreda100_v20.py as an HTTP endpoint
-  - Uploads result to Cloudflare R2
-  - Returns JSON: { url, filename, day, seed }
-
-Make calls POST /generate with { "day": "WEDNESDAY" }
-and gets back a public URL to post to Instagram / LinkedIn / Drive.
-
-Environment secrets (set in Modal dashboard):
-  R2_ENDPOINT_URL   — https://<account_id>.r2.cloudflarestorage.com
-  R2_ACCESS_KEY_ID
-  R2_SECRET_ACCESS_KEY
-  R2_BUCKET_NAME
-  R2_PUBLIC_BASE_URL — https://pub-<hash>.r2.dev  (public bucket URL)
+modal_app.py — SREDA100 infrastructure layer (v20.6 Parallel)
+Optimized for fast video generation using Modal's parallel mapping.
 """
 
 import io
 import os
 import random
 from datetime import date, datetime
-start = date(2026, 3, 19)
-day_number = (date.today() - start).days + 1
-
 import boto3
 import modal
 
 # ---------------------------------------------------------------------------
-# Image — Python deps + fonts bundled into the container
+# Image & App Setup
 # ---------------------------------------------------------------------------
 
 image = (
     modal.Image.debian_slim(python_version="3.11")
+    .apt_install("ffmpeg")
     .pip_install("Pillow", "numpy", "boto3", "fastapi[standard]")
-    # Fonts folder is copied from your repo into the container at build time.
-    # Put your .ttf / .ttc files in repo/fonts/ — see README for which ones.
     .add_local_dir("fonts", remote_path="/fonts")
-    # The generation script lives next to this file in the repo.
     .add_local_file("sreda100.py", remote_path="/root/sreda100_v20.py")
 )
 
 app = modal.App("sreda100", image=image)
-
-# ---------------------------------------------------------------------------
-# Secrets — pulled from Modal secret store, never hardcoded
-# ---------------------------------------------------------------------------
-
 r2_secret = modal.Secret.from_name("sreda100-r2")
 
-
-# ---------------------------------------------------------------------------
-# Patched font list for Linux container
-# ---------------------------------------------------------------------------
-
 LINUX_FONTS = [
-    ("/fonts/Inter-Bold.ttf",                0, "inter_bold"),
-    ("/fonts/Inter-Black.ttf",               0, "inter_black"),
-    ("/fonts/Outfit-Bold.ttf",               0, "outfit_bold"),
-    ("/fonts/BarlowCondensed-Bold.ttf",      0, "barlow_cond_bold"),
-    ("/fonts/BarlowCondensed-ExtraBold.ttf", 0, "barlow_cond_extrabold"),
-    ("/fonts/PlayfairDisplay-Bold.ttf",      0, "playfair_bold"),
-    ("/fonts/Lato-Bold.ttf",                 0, "lato_bold"),
-    ("/fonts/Lato-Black.ttf",                0, "lato_black"),
-    ("/fonts/Anton-Regular.ttf",             0, "anton"),
-    ("/fonts/RobotoSlab-Bold.ttf",           0, "roboto_slab_bold"),
-    ("/fonts/NunitoSans-ExtraBold.ttf",      0, "nunito_sans_extrabold"),
-    ("/fonts/DMSans-Bold.ttf",               0, "dm_sans_bold"),
-    ("/fonts/PlusJakartaSans-Bold.ttf",      0, "plus_jakarta_bold"),
+    ("/fonts/Inter-Bold.ttf", 0, "inter_bold"), ("/fonts/Inter-Black.ttf", 0, "inter_black"),
+    ("/fonts/Outfit-Bold.ttf", 0, "outfit_bold"), ("/fonts/BarlowCondensed-Bold.ttf", 0, "barlow_cond_bold"),
+    ("/fonts/BarlowCondensed-ExtraBold.ttf", 0, "barlow_cond_extrabold"), ("/fonts/PlayfairDisplay-Bold.ttf", 0, "playfair_bold"),
+    ("/fonts/Lato-Bold.ttf", 0, "lato_bold"), ("/fonts/Lato-Black.ttf", 0, "lato_black"),
+    ("/fonts/Anton-Regular.ttf", 0, "anton"), ("/fonts/RobotoSlab-Bold.ttf", 0, "roboto_slab_bold"),
+    ("/fonts/NunitoSans-ExtraBold.ttf", 0, "nunito_sans_extrabold"), ("/fonts/DMSans-Bold.ttf", 0, "dm_sans_bold"),
+    ("/fonts/PlusJakartaSans-Bold.ttf", 0, "plus_jakarta_bold"),
 ]
 
-
 def patch_fonts():
-    """Replace macOS font paths with Linux paths before calling generate()."""
     import sreda100_v20 as gen
     available = [(p, i, l) for p, i, l in LINUX_FONTS if os.path.exists(p)]
-    if not available:
-        raise RuntimeError(
-            "No fonts found in /fonts. "
-            "Copy .ttf files from your Mac into repo/fonts/ and redeploy."
-        )
     gen.AVAILABLE_FONTS = available
 
+# ---------------------------------------------------------------------------
+# Parallel Worker for Frame Rendering
+# ---------------------------------------------------------------------------
 
-def generate_to_bytes(day: str, seed: int | None = None) -> tuple[bytes, str]:
-    """
-    Run generation, return (png_bytes, filename) without touching disk.
-    Patches font paths and hijacks the save call.
-    """
+@app.function()
+def render_frame_worker(tile, t1, eff_seed, e1, ca, width, height):
     import sreda100_v20 as gen
+    import io
+    img = gen.render_video_frame(tile, t1, eff_seed, e1, ca, width, height)
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
 
+# ---------------------------------------------------------------------------
+# Core Generation Logic
+# ---------------------------------------------------------------------------
+
+PROJECT_START_DATE = date(2026, 3, 19)
+
+def get_day_number():
+    delta = date.today() - PROJECT_START_DATE
+    return delta.days + 1
+
+def generate_video_parallel(day: str, seed: int, background_mode: str = "none", palette_mode: str = "color"):
+    import sreda100_v20 as gen
+    import math
+    import subprocess
+    import shutil
+    
     patch_fonts()
+    rng = random.Random(seed)
+    
+    # 1. Setup Base Style
+    f_path, f_idx, f_lbl = rng.choice(gen.AVAILABLE_FONTS)
+    fs = gen.fit_font_to_width(day.upper(), f_path, f_idx, rng.uniform(0.65, 0.95), gen.WIDTH)
+    fs_render = fs * 2
+    
+    if palette_mode == "mono":
+        color_a, color_b = (255, 255, 255), (255, 255, 255)
+    else:
+        n_pal = len(gen.PALETTE_WHEEL); b_idx = rng.randint(0, n_pal-1); n_idx = (b_idx + rng.choice([-2,-1,1,2])) % n_pal
+        color_a, color_b = gen.PALETTE_WHEEL[b_idx][1], gen.PALETTE_WHEEL[n_idx][1]
+        
+    grad_img = gen.make_gradient_map(gen.WIDTH*2, gen.HEIGHT*2, color_a, color_b, rng.uniform(0, 360))
+    tile = gen.make_word_tile_gradient(day.upper(), f_path, f_idx, fs_render, rng.randint(-10, 80), grad_img)
+    
+    # 2. Compute Parameters for all frames
+    frame_params = []
+    frames_left, state = 0, "HOLD"
+    curr_e1, curr_t1, f_seed = rng.choice(gen.PRIMARY_EFFECTS), rng.uniform(0.2, 0.4), seed
+    curr_e2 = rng.choice([e for e in gen.PRIMARY_EFFECTS if e != curr_e1])
+    
+    for f in range(gen.TOTAL_FRAMES):
+        if frames_left <= 0:
+            if state == "HOLD": state, frames_left = "BURST", rng.randint(1, 4)
+            else:
+                state, frames_left = "HOLD", rng.randint(8, 25)
+                curr_e1, curr_t1, f_seed = rng.choice(gen.PRIMARY_EFFECTS), rng.uniform(0.25, 0.45), seed+f
+        
+        if state == "BURST":
+            t1, e1, ca, eff_seed = rng.uniform(0.4, 0.8), rng.choice(gen.PRIMARY_EFFECTS), rng.uniform(30, 60), seed+f*10
+        else:
+            t1, e1, ca, eff_seed = curr_t1 + math.sin(f*0.5)*0.05, curr_e1, 8 + math.sin(f*0.2)*4, f_seed
+        
+        if palette_mode == "mono": ca = ca * 0.6
+        frame_params.append((tile, t1, eff_seed, e1, ca, gen.WIDTH*2, gen.HEIGHT*2, background_mode, color_a))
+        frames_left -= 1
 
-    # Monkey-patch Image.save so we capture bytes instead of writing a file.
-    captured = {}
-    original_save = gen.Image.Image.save
+    # 3. Parallel Map Rendering
+    print(f"Launching {len(frame_params)} parallel renderers...")
+    frame_data_list = list(render_frame_worker.map(*zip(*frame_params)))
 
-    def fake_save(self, fp, fmt=None, **kwargs):
-        buf = io.BytesIO()
-        original_save(self, buf, format="PNG")
-        captured["data"] = buf.getvalue()
+    # 4. Assemble with FFmpeg
+    tmp_dir = f"/tmp/frames_{seed}"; os.makedirs(tmp_dir, exist_ok=True)
+    for i, data in enumerate(frame_data_list):
+        with open(f"{tmp_dir}/frame_{i:04d}.png", "wb") as f:
+            f.write(data)
+            
+    out_path = f"/tmp/video_{seed}.mp4"
+    subprocess.run(["ffmpeg", "-y", "-framerate", str(gen.FPS), "-i", f"{tmp_dir}/frame_%04d.png", 
+                    "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "18", out_path], 
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    
+    with open(out_path, "rb") as f:
+        video_bytes = f.read()
+    
+    shutil.rmtree(tmp_dir); os.remove(out_path)
+    
+    filename = f"video_{f_lbl}_{day}_{datetime.now().strftime('%Y%m%d')}_s{seed}.mp4"
+    meta = {
+        "font": f_lbl, "fs": fs, "video": True,
+        "effect1": curr_e1, "effect2": curr_e2,
+        "day_number": get_day_number(),
+        "background_mode": background_mode, "palette_mode": palette_mode
+    }
+    return video_bytes, filename, meta
 
-    gen.Image.Image.save = fake_save
+# ... (keep upload_to_r2)
 
-    try:
-        # generate() returns the would-be file path — we use it for the filename
-        out_path, meta = gen.generate(day, seed)
-        filename = os.path.basename(out_path)
-    finally:
-        gen.Image.Image.save = original_save  # always restore
-
-    if "data" not in captured:
-        raise RuntimeError("Image was never saved — check generate() logic.")
-
-    return captured["data"], filename, meta
-
-
-def upload_to_r2(data: bytes, filename: str) -> str:
-    """Upload PNG bytes to R2, return public URL."""
-    s3 = boto3.client(
-        "s3",
-        endpoint_url=os.environ["R2_ENDPOINT_URL"],
-        aws_access_key_id=os.environ["R2_ACCESS_KEY_ID"],
-        aws_secret_access_key=os.environ["R2_SECRET_ACCESS_KEY"],
-    )
-    bucket = os.environ["R2_BUCKET_NAME"]
-    s3.put_object(
-        Bucket=bucket,
-        Key=filename,
-        Body=data,
-        ContentType="image/png",
-    )
-    base = os.environ["R2_PUBLIC_BASE_URL"].rstrip("/")
-    return f"{base}/{filename}"
-
-
-# ---------------------------------------------------------------------------
-# Modal web endpoint
-# ---------------------------------------------------------------------------
-
-@app.function(secrets=[r2_secret], timeout=120)
+@app.function(secrets=[r2_secret], timeout=300)
 @modal.fastapi_endpoint(method="POST")
 def generate_endpoint(body: dict) -> dict:
-    from datetime import date, datetime
-
     day = body.get("day", datetime.now().strftime("%A")).upper()
-    seed = body.get("seed", None)
-    if seed is None:
-        seed = random.randint(0, 2**32)
+    seed = body.get("seed", random.randint(0, 2**32))
+    is_video = body.get("video", False)
+    bg_mode = body.get("background_mode", "none")
+    pal_mode = body.get("palette_mode", "color")
 
-    start = date(2026, 3, 19)
-    day_number = (date.today() - start).days + 1
+    if is_video:
+        data_bytes, filename, meta = generate_video_parallel(day, seed, bg_mode, pal_mode)
+    else:
+        import sreda100_v20 as gen
+        patch_fonts()
+        captured = {}
+        original_save = gen.Image.Image.save
+        def fake_save(self, fp, fmt=None, **kwargs):
+            buf = io.BytesIO(); original_save(self, buf, format="PNG"); captured["data"] = buf.getvalue()
+        gen.Image.Image.save = fake_save
+        try:
+            out_path, meta = gen.generate_static(day, seed, bg_mode, pal_mode)
+            filename = os.path.basename(out_path); data_bytes = captured["data"]
+            meta["day_number"] = get_day_number()
+            if "effect2" not in meta:
+                rng = random.Random(seed)
+                meta["effect2"] = rng.choice([e for e in gen.PRIMARY_EFFECTS if e != meta.get("effect1")])
+        finally:
+            gen.Image.Image.save = original_save
 
-    png_bytes, filename, meta = generate_to_bytes(day, seed)
-    url = upload_to_r2(png_bytes, filename)
-
-    return {
-        "url": url,
-        "filename": filename,
-        "day": day,
-        "seed": seed,
-        "day_number": day_number,
-        **meta,
-    }
+    url = upload_to_r2(data_bytes, filename)
+    return {"url": url, "filename": filename, "day": day, "seed": seed, **meta}

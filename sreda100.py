@@ -213,7 +213,41 @@ def apply_chromatic_aberration(img, max_str, seed):
         out[:,:,ch] = spatial_shift(arr[:,:,ch:ch+1], dist*math.cos(ang), dist*math.sin(ang))[:,:,0]
     return Image.fromarray(out, "RGB")
 
-def generate_static(day, seed=None):
+# ... (keep imports and constants)
+
+def make_background_layer(mode, width, height, color, frame_params=None):
+    """Dispatcher for background layers."""
+    bg = Image.new("RGBA", (width, height), (0, 0, 0, 255))
+    if mode == "none" or mode is None:
+        return bg
+        
+    if mode == "grid":
+        layer = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(layer)
+        # Random but deterministic step based on seed or something? 
+        # Actually frame_params usually has eff_seed.
+        rng_seed = frame_params['eff_seed'] if frame_params else 42
+        rng = random.Random(rng_seed)
+        step = rng.randint(120, 240) # Larger steps for render resolution (2x)
+        line_w = rng.randint(4, 8)
+        
+        # In mono mode, grid is bright white. In color, it follows color_a.
+        draw_color = (*color, 255)
+        
+        for x in range(0, width, step):
+            draw.line([(x, 0), (x, height)], fill=draw_color, width=line_w)
+        for y in range(0, height, step):
+            draw.line([(0, y), (width, y)], fill=draw_color, width=line_w)
+            
+        if frame_params:
+            dx, dy = displacement(frame_params['t1'], frame_params['eff_seed'], frame_params['e1'], width, height)
+            layer = warp_rgba(layer, 0, dx, dy, width, height)
+        
+        bg = Image.alpha_composite(bg, layer)
+        
+    return bg
+
+def generate_static(day, seed=None, background_mode="none", palette_mode="color"):
     if seed is None: seed = random.randint(0, 2**32)
     rng = random.Random(seed)
     f_path, f_idx, f_lbl = rng.choice(AVAILABLE_FONTS)
@@ -221,42 +255,68 @@ def generate_static(day, seed=None):
     fs = fit_font_to_width(day.upper(), f_path, f_idx, target, WIDTH)
     fs_render = fs * 2
     
-    n_pal = len(PALETTE_WHEEL); b_idx = rng.randint(0, n_pal-1); n_idx = (b_idx + rng.choice([-2,-1,1,2])) % n_pal
-    color_a, color_b = PALETTE_WHEEL[b_idx][1], PALETTE_WHEEL[n_idx][1]
+    if palette_mode == "mono":
+        color_a, color_b = (255, 255, 255), (255, 255, 255)
+    else:
+        n_pal = len(PALETTE_WHEEL); b_idx = rng.randint(0, n_pal-1); n_idx = (b_idx + rng.choice([-2,-1,1,2])) % n_pal
+        color_a, color_b = PALETTE_WHEEL[b_idx][1], PALETTE_WHEEL[n_idx][1]
+    
     grad_img = make_gradient_map(WIDTH*2, HEIGHT*2, color_a, color_b, rng.uniform(0, 360))
     tile = make_word_tile_gradient(day.upper(), f_path, f_idx, fs_render, ls, grad_img)
-    grid, pad = make_grid(tile, WIDTH*2, HEIGHT*2)
     
     e1 = rng.choices(PRIMARY_EFFECTS, weights=PRIMARY_WEIGHTS)[0]
     t1 = rng.uniform(0.20, 0.40) if e1 in ["shatter", "slices"] else rng.uniform(0.20, 0.55) if e1 == "columns" else rng.uniform(0.30, 0.65)
     
+    # Background
+    bg = make_background_layer(background_mode, WIDTH*2, HEIGHT*2, color_a, {"t1": t1, "e1": e1, "eff_seed": seed})
+    
+    # Word
+    grid, pad = make_grid(tile, WIDTH*2, HEIGHT*2)
     dx1, dy1 = displacement(t1, seed, e1, WIDTH*2, HEIGHT*2)
     p1 = warp_rgba(grid, pad, dx1, dy1, WIDTH*2, HEIGHT*2)
-    bg = Image.new("RGB", (WIDTH*2, HEIGHT*2), (0,0,0)); bg.paste(p1.convert("RGB"), mask=p1.split()[3])
     
-    # Secondary effect
-    e2 = rng.choice([e for e in SECONDARY_EFFECTS if e != e1])
-    dx2, dy2 = displacement(rng.uniform(0.1, 0.25), seed+1, e2, WIDTH*2, HEIGHT*2)
-    bg = Image.fromarray(np.array(bg, dtype=np.float32).astype(np.uint8), "RGB") # dummy for warp
-    # For simplicity in static, skip warp_rgb for secondary and just do independent CA
+    final_img = Image.alpha_composite(bg, p1).convert("RGB")
+    
     ca_str = rng.uniform(18, 54)
-    bg = apply_chromatic_aberration(bg, ca_str, seed)
+    if palette_mode == "mono": ca_str = 25 # Slightly lower for mono "reflects"
+    final_img = apply_chromatic_aberration(final_img, ca_str, seed)
     
-    bg = bg.resize((WIDTH, HEIGHT), Image.LANCZOS)
+    final_img = final_img.resize((WIDTH, HEIGHT), Image.LANCZOS)
     date_str = datetime.now().strftime("%Y%m%d")
-    fname = f"{e1}{int(t1*100)}_{f_lbl}_fs{fs}_{day}_{date_str}_s{seed}.png"
-    out_path = os.path.join(OUTPUT_DIR, fname); bg.save(out_path, "PNG")
-    print(f"✅ Static saved: {fname}")
-    return out_path
+    fname = f"{e1}{int(t1*100)}_{f_lbl}_{day}_{date_str}_s{seed}.png"
+    out_path = os.path.join(OUTPUT_DIR, fname); final_img.save(out_path, "PNG")
+    
+    return out_path, {
+        "effect1": e1, "intensity1": int(t1 * 100), "font": f_lbl, "fs": fs, "ca": int(ca_str),
+        "background_mode": background_mode, "palette_mode": palette_mode
+    }
 
-def generate_video(day, seed=None):
+def render_video_frame(tile, t1, eff_seed, e1, ca, width, height, background_mode="none", color_a=(255,255,255)):
+    """Render a single frame of video with background support."""
+    f_params = {"t1": t1, "e1": e1, "eff_seed": eff_seed}
+    bg = make_background_layer(background_mode, width, height, color_a, f_params)
+    
+    grid, pad = make_grid(tile, width, height)
+    dx1, dy1 = displacement(t1, eff_seed, e1, width, height)
+    p1 = warp_rgba(grid, pad, dx1, dy1, width, height)
+    
+    final = Image.alpha_composite(bg, p1).convert("RGB")
+    final = apply_chromatic_aberration(final, ca, eff_seed)
+    return final.resize((width // 2, height // 2), Image.LANCZOS)
+
+def generate_video(day, seed=None, background_mode="none", palette_mode="color"):
     if seed is None: seed = random.randint(0, 2**32)
     rng = random.Random(seed)
     f_path, f_idx, f_lbl = rng.choice(AVAILABLE_FONTS)
     fs = fit_font_to_width(day.upper(), f_path, f_idx, rng.uniform(0.65, 0.95), WIDTH)
     fs_render = fs * 2
-    n_pal = len(PALETTE_WHEEL); b_idx = rng.randint(0, n_pal-1); n_idx = (b_idx + rng.choice([-2,-1,1,2])) % n_pal
-    color_a, color_b = PALETTE_WHEEL[b_idx][1], PALETTE_WHEEL[n_idx][1]
+    
+    if palette_mode == "mono":
+        color_a, color_b = (255, 255, 255), (255, 255, 255)
+    else:
+        n_pal = len(PALETTE_WHEEL); b_idx = rng.randint(0, n_pal-1); n_idx = (b_idx + rng.choice([-2,-1,1,2])) % n_pal
+        color_a, color_b = PALETTE_WHEEL[b_idx][1], PALETTE_WHEEL[n_idx][1]
+        
     grad_img = make_gradient_map(WIDTH*2, HEIGHT*2, color_a, color_b, rng.uniform(0, 360))
     tile = make_word_tile_gradient(day.upper(), f_path, f_idx, fs_render, rng.randint(-10, 80), grad_img)
     
@@ -264,7 +324,6 @@ def generate_video(day, seed=None):
     frames_left, state = 0, "HOLD"
     current_e1, current_t1, f_seed = rng.choice(PRIMARY_EFFECTS), rng.uniform(0.2, 0.4), seed
     
-    print(f"Rendering {TOTAL_FRAMES} frames for {f_lbl}...")
     for f in range(TOTAL_FRAMES):
         if frames_left <= 0:
             if state == "HOLD": state, frames_left = "BURST", rng.randint(1, 4)
@@ -277,29 +336,32 @@ def generate_video(day, seed=None):
         else:
             t1, e1, ca, eff_seed = current_t1 + math.sin(f*0.5)*0.05, current_e1, 8 + math.sin(f*0.2)*4, f_seed
         
-        grid, pad = make_grid(tile, WIDTH*2, HEIGHT*2)
-        dx1, dy1 = displacement(t1, eff_seed, e1, WIDTH*2, HEIGHT*2)
-        p1 = warp_rgba(grid, pad, dx1, dy1, WIDTH*2, HEIGHT*2)
-        bg = Image.new("RGB", (WIDTH*2, HEIGHT*2), (0,0,0)); bg.paste(p1.convert("RGB"), mask=p1.split()[3])
-        bg = apply_chromatic_aberration(bg, ca, eff_seed)
-        bg.resize((WIDTH, HEIGHT), Image.LANCZOS).save(os.path.join(tmp_dir, f"frame_{f:04d}.png"))
+        if palette_mode == "mono": ca = ca * 0.6 # Softer CA for mono
+        
+        bg = render_video_frame(tile, t1, eff_seed, e1, ca, WIDTH*2, HEIGHT*2, background_mode, color_a)
+        bg.save(os.path.join(tmp_dir, f"frame_{f:04d}.png"))
         frames_left -= 1
     
     date_str = datetime.now().strftime("%Y%m%d")
     out_path = os.path.join(OUTPUT_DIR, f"video_{f_lbl}_{day}_{date_str}_s{seed}.mp4")
     subprocess.run(["ffmpeg", "-y", "-framerate", str(FPS), "-i", f"{tmp_dir}/frame_%04d.png", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "18", out_path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     shutil.rmtree(tmp_dir)
-    print(f"✅ Video saved: {out_path}")
-    return out_path
+    return out_path, {
+        "font": f_lbl, "fs": fs, "video": True, "fps": FPS, "duration": DURATION,
+        "background_mode": background_mode, "palette_mode": palette_mode
+    }
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--day", default=datetime.now().strftime("%A").upper())
     parser.add_argument("--seed", type=int, default=None)
-    parser.add_argument("--batch", type=int, default=20)
+    parser.add_argument("--batch", type=int, default=1)
     parser.add_argument("--video", action="store_true")
+    parser.add_argument("--background_mode", default="none")
+    parser.add_argument("--palette_mode", default="color")
     args = parser.parse_args()
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     for _ in range(args.batch):
-        if args.video: generate_video(args.day, args.seed)
-        else: generate_static(args.day, args.seed)
+        if args.video: generate_video(args.day, args.seed, args.background_mode, args.palette_mode)
+        else: generate_static(args.day, args.seed, args.background_mode, args.palette_mode)

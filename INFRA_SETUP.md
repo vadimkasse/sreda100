@@ -100,9 +100,9 @@ After this, every `git push` to `main` redeploys automatically.
 [Schedule: every day at N:00]
   │
   ├─ [HTTP: POST https://kassevadim--sreda100-generate-endpoint.modal.run]
-  │    Body (JSON string): {"day": "{{formatDate(now; "dddd")}}"}
+  │    Body (JSON string): {"day": "{{formatDate(now; \"dddd\")}}", "background_mode": "grid", "palette_mode": "mono"}
   │    Parse response: true
-  │    Response fields: url, filename, day, seed, day_number,
+  │    Response fields: url, filename, day, seed, day_number, background_mode, palette_mode,
   │                     effect1, effect2, intensity1, intensity2, font, gradient
   │
   ├─ [Instagram for Business: Create a Photo Post]
@@ -118,6 +118,7 @@ After this, every `git push` to `main` redeploys automatically.
 **Caption template:**
 ```
 Day {{day_number}}/100 — {{font}} · {{effect1}} {{intensity1}} / {{effect2}} {{intensity2}}
+BG: {{background_mode}} · PALETTE: {{palette_mode}}
 
 SREDA100 — generative typography project. One artifact per day, fully automated.
 
@@ -141,16 +142,13 @@ Pipeline: Python script renders a unique typographic artwork → Cloudflare R2 �
 | Field | Example | Description |
 |-------|---------|-------------|
 | `url` | `https://pub-xxx.r2.dev/shatter52_...png` | Public image URL |
-| `filename` | `shatter52_twist22_...png` | Full filename with all params |
-| `day` | `THURSDAY` | Day of week, uppercase |
-| `seed` | `890859871` | Seed for reproducibility |
-| `day_number` | `2` | Day in the 100-day series |
+| `day_number` | `40` | Day in the 100-day series |
+| `background_mode` | `grid` | Background style (none, grid) |
+| `palette_mode` | `mono` | Palette mode (color, mono) |
 | `effect1` | `shatter` | Primary displacement effect |
-| `effect2` | `chaos` | Secondary displacement effect |
-| `intensity1` | `64` | Primary effect intensity (0–100) |
-| `intensity2` | `12` | Secondary effect intensity (0–100) |
+| `effect2` | `chaos` | Secondary/burst effect |
 | `font` | `inter_bold` | Font label |
-| `gradient` | `violet-ice` | Gradient color pair |
+| `fs` | `240` | Target font size |
 
 ---
 
