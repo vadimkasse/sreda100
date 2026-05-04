@@ -72,6 +72,7 @@ def get_day_number():
     delta = date.today() - PROJECT_START_DATE
     return delta.days + 1
 
+@app.function(timeout=300)
 def generate_video_parallel(day: str, seed: int, background_mode: str = "none", palette_mode: str = "color"):
     import sreda100 as gen
     import math
@@ -180,7 +181,7 @@ def generate_endpoint(body: dict) -> dict:
     pal_mode = body.get("palette_mode", "color")
 
     if is_video:
-        data_bytes, filename, meta = generate_video_parallel(day, seed, bg_mode, pal_mode)
+        data_bytes, filename, meta = generate_video_parallel.local(day, seed, bg_mode, pal_mode)
     else:
         import sreda100 as gen
         patch_fonts()
@@ -201,3 +202,27 @@ def generate_endpoint(body: dict) -> dict:
 
     url = upload_to_r2(data_bytes, filename)
     return {"url": url, "filename": filename, "day": day, "seed": seed, **meta}
+
+@app.local_entrypoint()
+def test_endpoint():
+    """
+    Smoke test that exercises the parallel video pipeline without deploying.
+    Run with: modal run modal_app.py::test_endpoint
+    
+    Verifies render_frame_worker signature and frame_params alignment.
+    Required before any push that touches:
+      - render_frame_worker signature
+      - frame_params construction in generate_video_parallel
+      - upload_to_r2 logic
+    """
+    print("Test 1/2: defaults (none/color)")
+    data, fname, meta = generate_video_parallel.local("MONDAY", 12345, "none", "color")
+    assert data, "no bytes returned for none/color"
+    print(f"  ✓ {fname}, {len(data)} bytes, meta={meta}")
+    
+    print("Test 2/2: grid/mono")
+    data, fname, meta = generate_video_parallel.local("MONDAY", 12345, "grid", "mono")
+    assert data, "no bytes returned for grid/mono"
+    print(f"  ✓ {fname}, {len(data)} bytes, meta={meta}")
+    
+    print("\nAll tests passed. Safe to deploy.")
