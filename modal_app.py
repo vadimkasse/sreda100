@@ -19,7 +19,7 @@ image = (
     .apt_install("ffmpeg")
     .pip_install("Pillow", "numpy", "boto3", "fastapi[standard]")
     .add_local_dir("fonts", remote_path="/fonts")
-    .add_local_file("sreda100.py", remote_path="/root/sreda100_v20.py")
+    .add_local_file("sreda100.py", remote_path="/root/sreda100.py")
 )
 
 app = modal.App("sreda100", image=image)
@@ -36,8 +36,17 @@ LINUX_FONTS = [
 ]
 
 def patch_fonts():
-    import sreda100_v20 as gen
-    available = [(p, i, l) for p, i, l in LINUX_FONTS if os.path.exists(p)]
+    import sreda100 as gen
+    available = []
+    # Priority 1: Container paths (/fonts)
+    # Priority 2: Local paths (./fonts)
+    for p, i, l in LINUX_FONTS:
+        if os.path.exists(p):
+            available.append((p, i, l))
+        else:
+            local_p = p.lstrip("/")
+            if os.path.exists(local_p):
+                available.append((local_p, i, l))
     gen.AVAILABLE_FONTS = available
 
 # ---------------------------------------------------------------------------
@@ -45,10 +54,10 @@ def patch_fonts():
 # ---------------------------------------------------------------------------
 
 @app.function()
-def render_frame_worker(tile, t1, eff_seed, e1, ca, width, height):
-    import sreda100_v20 as gen
+def render_frame_worker(tile, t1, eff_seed, e1, ca, width, height, background_mode, color_a):
+    import sreda100 as gen
     import io
-    img = gen.render_video_frame(tile, t1, eff_seed, e1, ca, width, height)
+    img = gen.render_video_frame(tile, t1, eff_seed, e1, ca, width, height, background_mode, color_a)
     buf = io.BytesIO()
     img.save(buf, format="PNG")
     return buf.getvalue()
@@ -64,7 +73,7 @@ def get_day_number():
     return delta.days + 1
 
 def generate_video_parallel(day: str, seed: int, background_mode: str = "none", palette_mode: str = "color"):
-    import sreda100_v20 as gen
+    import sreda100 as gen
     import math
     import subprocess
     import shutil
@@ -137,7 +146,29 @@ def generate_video_parallel(day: str, seed: int, background_mode: str = "none", 
     }
     return video_bytes, filename, meta
 
-# ... (keep upload_to_r2)
+def upload_to_r2(data: bytes, filename: str) -> str:
+    """Upload bytes to R2, return public URL."""
+    s3 = boto3.client(
+        "s3",
+        endpoint_url=os.environ["R2_ENDPOINT_URL"],
+        aws_access_key_id=os.environ["R2_ACCESS_KEY_ID"],
+        aws_secret_access_key=os.environ["R2_SECRET_ACCESS_KEY"],
+    )
+    bucket = os.environ["R2_BUCKET_NAME"]
+    
+    if filename.endswith(".mp4"):
+        ctype = "video/mp4"
+    else:
+        ctype = "image/png"
+        
+    s3.put_object(
+        Bucket=bucket,
+        Key=filename,
+        Body=data,
+        ContentType=ctype,
+    )
+    base = os.environ["R2_PUBLIC_BASE_URL"].rstrip("/")
+    return f"{base}/{filename}"
 
 @app.function(secrets=[r2_secret], timeout=300)
 @modal.fastapi_endpoint(method="POST")
@@ -151,7 +182,7 @@ def generate_endpoint(body: dict) -> dict:
     if is_video:
         data_bytes, filename, meta = generate_video_parallel(day, seed, bg_mode, pal_mode)
     else:
-        import sreda100_v20 as gen
+        import sreda100 as gen
         patch_fonts()
         captured = {}
         original_save = gen.Image.Image.save
