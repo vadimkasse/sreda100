@@ -79,7 +79,6 @@ def generate_video_parallel(day: str, seed: int, background_mode: str = "none", 
     import subprocess
     import shutil
     
-    print(f"DEBUG: generate_video_parallel called with day='{day}'")
     patch_fonts()
     rng = random.Random(seed)
     
@@ -175,8 +174,7 @@ def upload_to_r2(data: bytes, filename: str) -> str:
 @app.function(secrets=[r2_secret], timeout=300)
 @modal.fastapi_endpoint(method="POST")
 def generate_endpoint(body: dict) -> dict:
-    day = body.get("day", datetime.now().strftime("%A")).upper()
-    print(f"DEBUG: generate_endpoint received day='{day}' from body={body}")
+    day = body.get("day", datetime.now().strftime("%A")).strip().upper()
     seed = body.get("seed", random.randint(0, 2**32))
     is_video = body.get("video", False)
     bg_mode = body.get("background_mode", "none")
@@ -216,7 +214,7 @@ def test_endpoint(day: str = None):
     if day is None:
         day = datetime.now().strftime("%A").upper()
     else:
-        day = day.upper()
+        day = day.strip().upper()
         
     print(f"Test 1/2: defaults (none/color) for {day}")
     data, fname, meta = generate_video_parallel.local(day, 12345, "none", "color")
