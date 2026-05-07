@@ -204,24 +204,25 @@ def generate_endpoint(body: dict) -> dict:
     return {"url": url, "filename": filename, "day": day, "seed": seed, **meta}
 
 @app.local_entrypoint()
-def test_endpoint():
+def test_endpoint(day: str = None):
     """
     Smoke test that exercises the parallel video pipeline without deploying.
-    Run with: modal run modal_app.py::test_endpoint
-    
-    Verifies render_frame_worker signature and frame_params alignment.
-    Required before any push that touches:
-      - render_frame_worker signature
-      - frame_params construction in generate_video_parallel
-      - upload_to_r2 logic
+    Run with: 
+      modal run modal_app.py
+      modal run modal_app.py --day TUESDAY
     """
-    print("Test 1/2: defaults (none/color)")
-    data, fname, meta = generate_video_parallel.local("MONDAY", 12345, "none", "color")
+    if day is None:
+        day = datetime.now().strftime("%A").upper()
+    else:
+        day = day.upper()
+        
+    print(f"Test 1/2: defaults (none/color) for {day}")
+    data, fname, meta = generate_video_parallel.local(day, 12345, "none", "color")
     assert data, "no bytes returned for none/color"
     print(f"  ✓ {fname}, {len(data)} bytes, meta={meta}")
     
-    print("Test 2/2: grid/mono")
-    data, fname, meta = generate_video_parallel.local("MONDAY", 12345, "grid", "mono")
+    print(f"Test 2/2: grid/mono for {day}")
+    data, fname, meta = generate_video_parallel.local(day, 12345, "grid", "mono")
     assert data, "no bytes returned for grid/mono"
     print(f"  ✓ {fname}, {len(data)} bytes, meta={meta}")
     
