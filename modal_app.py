@@ -1,12 +1,13 @@
 """
-modal_app.py — SREDA100 infrastructure layer (v20.6 Parallel)
-Optimized for fast video generation using Modal's parallel mapping.
+modal_app.py — SREDA100 infrastructure layer (v21.0 Organic Parallel)
+Upgraded to support smooth transitions and sub-pixel CA.
 """
 
 import io
 import os
 import random
 from datetime import date, datetime
+import math
 import boto3
 import modal
 
@@ -38,15 +39,11 @@ LINUX_FONTS = [
 def patch_fonts():
     import sreda100 as gen
     available = []
-    # Priority 1: Container paths (/fonts)
-    # Priority 2: Local paths (./fonts)
     for p, i, l in LINUX_FONTS:
-        if os.path.exists(p):
-            available.append((p, i, l))
+        if os.path.exists(p): available.append((p, i, l))
         else:
             local_p = p.lstrip("/")
-            if os.path.exists(local_p):
-                available.append((local_p, i, l))
+            if os.path.exists(local_p): available.append((local_p, i, l))
     gen.AVAILABLE_FONTS = available
 
 # ---------------------------------------------------------------------------
@@ -54,10 +51,11 @@ def patch_fonts():
 # ---------------------------------------------------------------------------
 
 @app.function()
-def render_frame_worker(tile, t1, eff_seed, e1, ca, width, height, background_mode, color_a):
+def render_frame_worker(tile, dx, dy, ca, width, height, background_mode, color_a, ca_seed):
     import sreda100 as gen
     import io
-    img = gen.render_video_frame(tile, t1, eff_seed, e1, ca, width, height, background_mode, color_a)
+    # Call the NEW production renderer
+    img = gen.render_video_frame_manual(tile, dx, dy, ca, width, height, background_mode, color_a, ca_seed)
     buf = io.BytesIO()
     img.save(buf, format="PNG")
     return buf.getvalue()
@@ -72,12 +70,13 @@ def get_day_number():
     delta = date.today() - PROJECT_START_DATE
     return delta.days + 1
 
-@app.function(timeout=300)
-def generate_video_parallel(day: str, seed: int, background_mode: str = "none", palette_mode: str = "color"):
+@app.function(timeout=600)
+def generate_video_parallel(day: str, seed: int, background_mode: str = "grid", palette_mode: str = "mono"):
     import sreda100 as gen
     import math
     import subprocess
     import shutil
+    import numpy as np
     
     patch_fonts()
     rng = random.Random(seed)
@@ -86,37 +85,40 @@ def generate_video_parallel(day: str, seed: int, background_mode: str = "none", 
     f_path, f_idx, f_lbl = rng.choice(gen.AVAILABLE_FONTS)
     fs = gen.fit_font_to_width(day.upper(), f_path, f_idx, rng.uniform(0.65, 0.95), gen.WIDTH)
     fs_render = fs * 2
+    color_a = (255, 255, 255)
     
-    if palette_mode == "mono":
-        color_a, color_b = (255, 255, 255), (255, 255, 255)
-    else:
-        n_pal = len(gen.PALETTE_WHEEL); b_idx = rng.randint(0, n_pal-1); n_idx = (b_idx + rng.choice([-2,-1,1,2])) % n_pal
-        color_a, color_b = gen.PALETTE_WHEEL[b_idx][1], gen.PALETTE_WHEEL[n_idx][1]
-        
-    grad_img = gen.make_gradient_map(gen.WIDTH*2, gen.HEIGHT*2, color_a, color_b, rng.uniform(0, 360))
+    grad_img = gen.make_gradient_map(gen.WIDTH*2, gen.HEIGHT*2, color_a, color_a, 0)
     tile = gen.make_word_tile_gradient(day.upper(), f_path, f_idx, fs_render, rng.randint(-10, 80), grad_img)
     
-    # 2. Compute Parameters for all frames
-    frame_params = []
-    frames_left, state = 0, "HOLD"
-    curr_e1, curr_t1, f_seed = rng.choice(gen.PRIMARY_EFFECTS), rng.uniform(0.2, 0.4), seed
-    curr_e2 = rng.choice([e for e in gen.PRIMARY_EFFECTS if e != curr_e1])
+    # 2. Transition Parameters (Sync with sreda100.py)
+    def get_aggressive_anchor():
+        mode, s, t = rng.choice(gen.PRIMARY_EFFECTS), rng.randint(0, 2**32), rng.uniform(0.65, 0.95)
+        return gen.displacement(t, s, mode, gen.WIDTH*2, gen.HEIGHT*2)
+
+    dx_start, dy_start = get_aggressive_anchor()
+    dx_end, dy_end = get_aggressive_anchor()
+    trans_duration = gen.FPS * 1.2
+    frames_in_trans = 0
     
+    frame_params = []
     for f in range(gen.TOTAL_FRAMES):
-        if frames_left <= 0:
-            if state == "HOLD": state, frames_left = "BURST", rng.randint(1, 4)
-            else:
-                state, frames_left = "HOLD", rng.randint(8, 25)
-                curr_e1, curr_t1, f_seed = rng.choice(gen.PRIMARY_EFFECTS), rng.uniform(0.25, 0.45), seed+f
+        alpha = frames_in_trans / trans_duration
+        alpha_ease = 0.5 - 0.5 * math.cos(alpha * math.pi)
         
-        if state == "BURST":
-            t1, e1, ca, eff_seed = rng.uniform(0.4, 0.8), rng.choice(gen.PRIMARY_EFFECTS), rng.uniform(30, 60), seed+f*10
-        else:
-            t1, e1, ca, eff_seed = curr_t1 + math.sin(f*0.5)*0.05, curr_e1, 8 + math.sin(f*0.2)*4, f_seed
+        dx = dx_start * (1 - alpha_ease) + dx_end * alpha_ease
+        dy = dy_start * (1 - alpha_ease) + dy_end * alpha_ease
+        # Perpetual motion
+        drift_amp = 30; dx += drift_amp * math.sin(f * 0.3 + seed); dy += drift_amp * math.cos(f * 0.4 + seed*1.1)
+        ca = (20 * (1 - alpha_ease) + 40 * alpha_ease) * 0.7
         
-        if palette_mode == "mono": ca = ca * 0.6
-        frame_params.append((tile, t1, eff_seed, e1, ca, gen.WIDTH*2, gen.HEIGHT*2, background_mode, color_a))
-        frames_left -= 1
+        # Prepare for parallel rendering
+        frame_params.append((tile, dx, dy, ca, gen.WIDTH*2, gen.HEIGHT*2, background_mode, color_a, seed))
+        
+        frames_in_trans += 1
+        if frames_in_trans >= trans_duration:
+            dx_start, dy_start = dx_end, dy_end
+            dx_end, dy_end = get_aggressive_anchor()
+            frames_in_trans = 0
 
     # 3. Parallel Map Rendering
     print(f"Launching {len(frame_params)} parallel renderers...")
@@ -141,14 +143,12 @@ def generate_video_parallel(day: str, seed: int, background_mode: str = "none", 
     filename = f"video_{f_lbl}_{day}_{datetime.now().strftime('%Y%m%d')}_s{seed}.mp4"
     meta = {
         "font": f_lbl, "fs": fs, "video": True,
-        "effect1": curr_e1, "effect2": curr_e2,
         "day_number": get_day_number(),
         "background_mode": background_mode, "palette_mode": palette_mode
     }
     return video_bytes, filename, meta
 
 def upload_to_r2(data: bytes, filename: str) -> str:
-    """Upload bytes to R2, return public URL."""
     s3 = boto3.client(
         "s3",
         endpoint_url=os.environ["R2_ENDPOINT_URL"],
@@ -156,29 +156,19 @@ def upload_to_r2(data: bytes, filename: str) -> str:
         aws_secret_access_key=os.environ["R2_SECRET_ACCESS_KEY"],
     )
     bucket = os.environ["R2_BUCKET_NAME"]
-    
-    if filename.endswith(".mp4"):
-        ctype = "video/mp4"
-    else:
-        ctype = "image/png"
-        
-    s3.put_object(
-        Bucket=bucket,
-        Key=filename,
-        Body=data,
-        ContentType=ctype,
-    )
+    ctype = "video/mp4" if filename.endswith(".mp4") else "image/png"
+    s3.put_object(Bucket=bucket, Key=filename, Body=data, ContentType=ctype)
     base = os.environ["R2_PUBLIC_BASE_URL"].rstrip("/")
     return f"{base}/{filename}"
 
-@app.function(secrets=[r2_secret], timeout=300)
+@app.function(secrets=[r2_secret], timeout=600)
 @modal.fastapi_endpoint(method="POST")
 def generate_endpoint(body: dict) -> dict:
     day = body.get("day", datetime.now().strftime("%A")).strip().upper()
     seed = body.get("seed", random.randint(0, 2**32))
     is_video = body.get("video", False)
-    bg_mode = body.get("background_mode", "none")
-    pal_mode = body.get("palette_mode", "color")
+    bg_mode = body.get("background_mode", "grid")
+    pal_mode = body.get("palette_mode", "mono")
 
     if is_video:
         data_bytes, filename, meta = generate_video_parallel.local(day, seed, bg_mode, pal_mode)
@@ -194,9 +184,6 @@ def generate_endpoint(body: dict) -> dict:
             out_path, meta = gen.generate_static(day, seed, bg_mode, pal_mode)
             filename = os.path.basename(out_path); data_bytes = captured["data"]
             meta["day_number"] = get_day_number()
-            if "effect2" not in meta:
-                rng = random.Random(seed)
-                meta["effect2"] = rng.choice([e for e in gen.PRIMARY_EFFECTS if e != meta.get("effect1")])
         finally:
             gen.Image.Image.save = original_save
 
@@ -205,25 +192,9 @@ def generate_endpoint(body: dict) -> dict:
 
 @app.local_entrypoint()
 def test_endpoint(day: str = None):
-    """
-    Smoke test that exercises the parallel video pipeline without deploying.
-    Run with: 
-      modal run modal_app.py
-      modal run modal_app.py --day TUESDAY
-    """
-    if day is None:
-        day = datetime.now().strftime("%A").upper()
-    else:
-        day = day.strip().upper()
-        
-    print(f"Test 1/2: defaults (none/color) for {day}")
-    data, fname, meta = generate_video_parallel.local(day, 12345, "none", "color")
-    assert data, "no bytes returned for none/color"
-    print(f"  ✓ {fname}, {len(data)} bytes, meta={meta}")
-    
-    print(f"Test 2/2: grid/mono for {day}")
+    if day is None: day = datetime.now().strftime("%A").upper()
+    else: day = day.strip().upper()
+    print(f"Test 1/1: grid/mono for {day}")
     data, fname, meta = generate_video_parallel.local(day, 12345, "grid", "mono")
-    assert data, "no bytes returned for grid/mono"
+    assert data, "no bytes returned"
     print(f"  ✓ {fname}, {len(data)} bytes, meta={meta}")
-    
-    print("\nAll tests passed. Safe to deploy.")
