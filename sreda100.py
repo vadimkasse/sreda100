@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-SREDA100 v20.5 (Unified Engine)
+SREDA100 v21.0 (Organic Aggression)
 Art project: Rhythmic geometric typography.
-Supports static image generation and 'Hold & Burst' rhythmic video sequences.
+Unified engine: Smooth transitions, aggressive distortion, flicker-free sub-pixel CA.
 """
 
 import argparse
@@ -39,21 +39,9 @@ BOLD_FONTS = [
 ]
 AVAILABLE_FONTS = [(p, i, l) for p, i, l in BOLD_FONTS if os.path.exists(p)]
 
-PALETTE_WHEEL = [
-    ("red",     (255,  50,  50)), ("orange",  (255, 120,   0)), ("yellow",  (255, 220,   0)),
-    ("lime",    (180, 255,   0)), ("green",   (  0, 255, 100)), ("teal",    (  0, 220, 160)),
-    ("cyan",    (  0, 210, 255)), ("ice",     (120, 200, 255)), ("violet",  (140,  80, 255)),
-    ("magenta", (255,   0, 200)), ("pink",    (255, 100, 180)),
-]
-
-HALO_PALETTE = [((0, 200, 255), "cyan"), ((255, 220, 0), "yellow"), ((120, 200, 255), "ice")]
-
+# Only destructive effects for maximum aggression
 PRIMARY_EFFECTS = ["shatter", "earthquake", "columns", "prism", "slices", "blocks",
-                   "glitch", "shear", "tilt", "drift", "scatter", "fold", "melt", "wave"]
-PRIMARY_WEIGHTS = [4, 6, 4, 3, 3, 4, 2, 2, 2, 3, 2, 2, 2, 2]
-
-SECONDARY_EFFECTS = ["columns", "prism", "slices", "blocks", "shatter"]
-SECONDARY_WEIGHTS = [4, 3, 3, 4, 3]
+                   "glitch", "scatter", "fold", "melt", "wave"]
 
 def get_font(path, size, index=0):
     try: return ImageFont.truetype(path, size, index=index)
@@ -108,85 +96,69 @@ def make_grid(tile, pad_w, pad_h):
 def displacement(t, seed, mode, w, h):
     rng = np.random.RandomState(seed)
     xi, yi = np.meshgrid(np.arange(w), np.arange(h))
-    amp = t * 200
+    amp = t * 500
     dx, dy = np.zeros((h,w), np.float32), np.zeros((h,w), np.float32)
 
     if mode == "shatter":
-        n = rng.randint(6, 20)
+        n = rng.randint(10, 25)
         px, py = rng.uniform(0, w, n), rng.uniform(0, h, n)
         sox, soy = rng.uniform(-amp, amp, n), rng.uniform(-amp*0.6, amp*0.6, n)
         dists = (xi[..., None]-px)**2 + (yi[..., None]-py)**2
         owner = np.argmin(dists, axis=2)
         for i in range(n):
-            mv = (owner == i)
-            dx += mv * sox[i]; dy += mv * soy[i]
+            mv = (owner == i); dx += mv * sox[i]; dy += mv * soy[i]
     elif mode == "columns":
-        n_cols = rng.randint(8, 20); bw = w // n_cols
+        n_cols = rng.randint(12, 24); bw = w // n_cols
         for i in range(n_cols):
-            mask = (xi >= i*bw) & (xi < (i+1)*bw)
-            dy += mask * rng.uniform(-amp, amp)
+            mask = (xi >= i*bw) & (xi < (i+1)*bw); dy += mask * rng.uniform(-amp, amp)
     elif mode == "prism":
-        for _ in range(rng.randint(3, 6)):
+        for _ in range(rng.randint(4, 8)):
             ang = rng.uniform(0, 2*math.pi); nx, ny = math.cos(ang), math.sin(ang)
             proj = xi*nx + yi*ny
             mid = rng.uniform(proj.min() + (proj.max()-proj.min())*0.15, proj.max() - (proj.max()-proj.min())*0.15)
-            mask = proj > mid
-            shift = rng.uniform(-amp, amp)
+            mask = proj > mid; shift = rng.uniform(-amp, amp)
             dx += mask * shift * nx; dy += mask * shift * ny
     elif mode == "slices":
         ang = rng.uniform(0, math.pi); nx, ny = math.cos(ang), math.sin(ang)
-        proj = xi*nx + yi*ny
-        n_sl = rng.randint(6, 15); sl_w = (proj.max()-proj.min())/n_sl
+        proj = xi*nx + yi*ny; n_sl = rng.randint(10, 20); sl_w = (proj.max()-proj.min())/n_sl
         for i in range(n_sl):
             mask = (proj >= proj.min()+i*sl_w) & (proj < proj.min()+(i+1)*sl_w)
-            sh = rng.uniform(-amp, amp)
-            dx += mask * sh * nx; dy += mask * sh * ny
+            sh = rng.uniform(-amp, amp); dx += mask * sh * nx; dy += mask * sh * ny
     elif mode == "blocks":
-        for _ in range(rng.randint(10, 20)):
-            bw, bh = rng.uniform(w*0.1, w*0.6), rng.uniform(h*0.05, h*0.25)
+        for _ in range(rng.randint(15, 30)):
+            bw, bh = rng.uniform(w*0.1, w*0.5), rng.uniform(h*0.05, h*0.2)
             bx, by = rng.uniform(-bw*0.5, w), rng.uniform(-bh*0.5, h)
             mask = (xi >= bx) & (xi < bx+bw) & (yi >= by) & (yi < by+bh)
             dx += mask * rng.uniform(-amp, amp); dy += mask * rng.uniform(-amp*0.5, amp*0.5)
     elif mode == "earthquake":
-        n_b = rng.randint(8, 25); bh = h // n_b
+        n_b = rng.randint(12, 30); bh = h // n_b
         for i in range(n_b):
-            mask = (yi >= i*bh) & (yi < (i+1)*bh)
-            dx += mask * rng.uniform(-amp, amp)
+            mask = (yi >= i*bh) & (yi < (i+1)*bh); dx += mask * rng.uniform(-amp, amp)
     elif mode == "scatter":
-        block_size = rng.randint(200, 500); blend_width = block_size // 4
+        block_size = rng.randint(150, 400)
         blocks_y, blocks_x = (h+block_size-1)//block_size, (w+block_size-1)//block_size
         bd = rng.uniform(-amp, amp, (blocks_y, blocks_x, 2))
         for y in range(h):
             for x in range(w):
                 by, bx = min(y//block_size, blocks_y-1), min(x//block_size, blocks_x-1)
                 dx[y,x], dy[y,x] = bd[by,bx,0], bd[by,bx,1]
-    elif mode in ["glitch", "shear", "tilt", "drift", "fold", "melt", "wave"]:
-        # Standard logic as in v20.4
+    elif mode in ["glitch", "fold", "melt", "wave"]:
         if mode == "glitch":
-            for _ in range(rng.randint(4, 12)):
-                y0, y1 = rng.randint(0, h), min(rng.randint(0, h)+80, h)
-                mask = (yi >= y0) & (yi < y1)
-                dx += mask * rng.uniform(-amp, amp)
+            for _ in range(rng.randint(8, 20)):
+                y0, y1 = rng.randint(0, h), min(rng.randint(0, h)+100, h)
+                mask = (yi >= y0) & (yi < y1); dx += mask * rng.uniform(-amp, amp)
         elif mode == "fold":
-            axis = rng.choice(["v", "h"])
-            if axis == "v":
-                fx = rng.uniform(w*0.2, w*0.8); dx = amp * 0.8 * np.sign(xi - fx) * (1.0 - np.exp(-np.abs(xi-fx)/100))
-            else:
-                fy = rng.uniform(h*0.2, h*0.8); dy = amp * 0.8 * np.sign(yi - fy) * (1.0 - np.exp(-np.abs(yi-fy)/100))
+            for _ in range(2):
+                axis = rng.choice(["v", "h"])
+                if axis == "v":
+                    fx = rng.uniform(w*0.2, w*0.8); dx += amp * 0.8 * np.sign(xi - fx) * (1.0 - np.exp(-np.abs(xi-fx)/100))
+                else:
+                    fy = rng.uniform(h*0.2, h*0.8); dy += amp * 0.8 * np.sign(yi - fy) * (1.0 - np.exp(-np.abs(yi-fy)/100))
         elif mode == "melt":
-            dy = amp * (yi/h) * 0.7 + amp * 0.3 * np.sin(xi*0.01 + rng.uniform(0, 6.28))
+            dy = amp * (yi/h) * 0.8 + amp * 0.4 * np.sin(xi*0.012 + rng.uniform(0, 6.28))
         elif mode == "wave":
-            for _ in range(rng.randint(3, 8)):
-                dx += amp * 0.3 * np.sin(yi*rng.uniform(0.003, 0.015) + rng.uniform(0, 6.28)) / 5
-        elif mode == "shear":
-            s = rng.uniform(-0.5, 0.5); dx, dy = amp * s * (yi/h-0.5), amp * s * (xi/w-0.5)
-        elif mode == "tilt":
-            tx, ty = rng.uniform(-0.3, 0.3), rng.uniform(-0.3, 0.3); dx, dy = amp * tx * (yi/h-0.5), amp * ty * (xi/w-0.5)
-        elif mode == "drift":
-            nb = rng.randint(6, 15); bh = h//nb; ps = 0
-            for i in range(nb):
-                s = ps + (rng.uniform(-amp, amp) - ps) * 0.6; mask = (yi >= i*bh) & (yi < (i+1)*bh)
-                dx += mask * s; ps = s
+            for _ in range(rng.randint(4, 10)):
+                dx += amp * 0.4 * np.sin(yi*rng.uniform(0.005, 0.02) + rng.uniform(0, 6.28)) / 5
     return dx.astype(np.float32), dy.astype(np.float32)
 
 def warp_rgba(grid, pad, dx, dy, w, h):
@@ -199,158 +171,107 @@ def warp_rgba(grid, pad, dx, dy, w, h):
     interp = v00*(1-fy)*(1-fx) + v01*(1-fy)*fx + v10*fy*(1-fx) + v11*fy*fx
     return Image.fromarray(interp.astype(np.uint8), "RGBA")
 
-def spatial_shift(arr, dx, dy):
-    res = np.zeros_like(arr); h, w = arr.shape[:2]; sx, sy = int(dx), int(dy)
-    dx0, dx1, dy0, dy1 = max(0, sx), min(w, w+sx), max(0, sy), min(h, h+sy)
-    sx0, sx1, sy0, sy1 = max(0, -sx), min(w, w-sx), max(0, -sy), min(h, h-sy)
-    if dx1 > dx0 and dy1 > dy0: res[dy0:dy1, dx0:dx1] = arr[sy0:sy1, sx0:sx1]
-    return res
-
 def apply_chromatic_aberration(img, max_str, seed):
-    rng = random.Random(seed); arr = np.array(img); out = np.zeros_like(arr); out[:,:,1] = arr[:,:,1]
+    rng = random.Random(seed)
+    arr = np.array(img, dtype=np.float32)
+    h, w = arr.shape[:2]; out = np.zeros_like(arr); out[:,:,1] = arr[:,:,1]
     for ch in [0, 2]:
-        ang, dist = rng.uniform(0, 2*math.pi), rng.uniform(max_str*0.4, max_str)
-        out[:,:,ch] = spatial_shift(arr[:,:,ch:ch+1], dist*math.cos(ang), dist*math.sin(ang))[:,:,0]
-    return Image.fromarray(out, "RGB")
+        ang = rng.uniform(0, 2*math.pi); dist = rng.uniform(max_str*0.5, max_str)
+        tx, ty = dist * math.cos(ang), dist * math.sin(ang)
+        yy, xx = np.indices((h, w), dtype=np.float32)
+        sx_f, sy_f = xx - tx, yy - ty
+        sx0, sy0 = np.clip(np.floor(sx_f).astype(np.int32), 0, w-2), np.clip(np.floor(sy_f).astype(np.int32), 0, h-2)
+        fx, fy = sx_f - sx0, sy_f - sy0
+        v00, v01, v10, v11 = arr[sy0, sx0, ch], arr[sy0, sx0+1, ch], arr[sy0+1, sx0, ch], arr[sy0+1, sx0+1, ch]
+        out[:,:,ch] = v00*(1-fx)*(1-fy) + v01*fx*(1-fy) + v10*(1-fx)*fy + v11*fx*fy
+    return Image.fromarray(out.astype(np.uint8), "RGB")
 
-# ... (keep imports and constants)
-
-def make_background_layer(mode, width, height, color, frame_params=None):
-    """Dispatcher for background layers."""
+def make_background_layer(mode, width, height, color, dx=None, dy=None):
     bg = Image.new("RGBA", (width, height), (0, 0, 0, 255))
-    if mode == "none" or mode is None:
-        return bg
-        
     if mode == "grid":
-        layer = Image.new("RGBA", (width, height), (0, 0, 0, 0))
-        draw = ImageDraw.Draw(layer)
-        # Random but deterministic step based on seed or something? 
-        # Actually frame_params usually has eff_seed.
-        rng_seed = frame_params['eff_seed'] if frame_params else 42
-        rng = random.Random(rng_seed)
-        step = rng.randint(120, 240) # Larger steps for render resolution (2x)
-        line_w = rng.randint(4, 8)
-        
-        # In mono mode, grid is bright white. In color, it follows color_a.
-        draw_color = (*color, 255)
-        
-        for x in range(0, width, step):
-            draw.line([(x, 0), (x, height)], fill=draw_color, width=line_w)
-        for y in range(0, height, step):
-            draw.line([(0, y), (width, y)], fill=draw_color, width=line_w)
-            
-        if frame_params:
-            dx, dy = displacement(frame_params['t1'], frame_params['eff_seed'], frame_params['e1'], width, height)
-            layer = warp_rgba(layer, 0, dx, dy, width, height)
-        
+        layer = Image.new("RGBA", (width, height), (0, 0, 0, 0)); draw = ImageDraw.Draw(layer)
+        step, line_w, draw_color = 120, 4, (*color, 255)
+        for x in range(0, width, step): draw.line([(x, 0), (x, height)], fill=draw_color, width=line_w)
+        for y in range(0, height, step): draw.line([(0, y), (width, y)], fill=draw_color, width=line_w)
+        if dx is not None and dy is not None: layer = warp_rgba(layer, 0, dx, dy, width, height)
         bg = Image.alpha_composite(bg, layer)
-        
     return bg
 
-def generate_static(day, seed=None, background_mode="none", palette_mode="color"):
-    if seed is None: seed = random.randint(0, 2**32)
-    rng = random.Random(seed)
-    f_path, f_idx, f_lbl = rng.choice(AVAILABLE_FONTS)
-    ls, target = rng.randint(-10, 80), rng.uniform(0.65, 0.95)
-    fs = fit_font_to_width(day.upper(), f_path, f_idx, target, WIDTH)
-    fs_render = fs * 2
-    
-    if palette_mode == "mono":
-        color_a, color_b = (255, 255, 255), (255, 255, 255)
-    else:
-        n_pal = len(PALETTE_WHEEL); b_idx = rng.randint(0, n_pal-1); n_idx = (b_idx + rng.choice([-2,-1,1,2])) % n_pal
-        color_a, color_b = PALETTE_WHEEL[b_idx][1], PALETTE_WHEEL[n_idx][1]
-    
-    grad_img = make_gradient_map(WIDTH*2, HEIGHT*2, color_a, color_b, rng.uniform(0, 360))
-    tile = make_word_tile_gradient(day.upper(), f_path, f_idx, fs_render, ls, grad_img)
-    
-    e1 = rng.choices(PRIMARY_EFFECTS, weights=PRIMARY_WEIGHTS)[0]
-    t1 = rng.uniform(0.20, 0.40) if e1 in ["shatter", "slices"] else rng.uniform(0.20, 0.55) if e1 == "columns" else rng.uniform(0.30, 0.65)
-    
-    # Background
-    bg = make_background_layer(background_mode, WIDTH*2, HEIGHT*2, color_a, {"t1": t1, "e1": e1, "eff_seed": seed})
-    
-    # Word
-    grid, pad = make_grid(tile, WIDTH*2, HEIGHT*2)
-    dx1, dy1 = displacement(t1, seed, e1, WIDTH*2, HEIGHT*2)
-    p1 = warp_rgba(grid, pad, dx1, dy1, WIDTH*2, HEIGHT*2)
-    
-    final_img = Image.alpha_composite(bg, p1).convert("RGB")
-    
-    ca_str = rng.uniform(18, 54)
-    if palette_mode == "mono": ca_str = 25 # Slightly lower for mono "reflects"
-    final_img = apply_chromatic_aberration(final_img, ca_str, seed)
-    
-    final_img = final_img.resize((WIDTH, HEIGHT), Image.LANCZOS)
-    date_str = datetime.now().strftime("%Y%m%d")
-    fname = f"{e1}{int(t1*100)}_{f_lbl}_{day}_{date_str}_s{seed}.png"
-    out_path = os.path.join(OUTPUT_DIR, fname); final_img.save(out_path, "PNG")
-    
-    return out_path, {
-        "effect1": e1, "intensity1": int(t1 * 100), "font": f_lbl, "fs": fs, "ca": int(ca_str),
-        "background_mode": background_mode, "palette_mode": palette_mode
-    }
-
-def render_video_frame(tile, t1, eff_seed, e1, ca, width, height, background_mode="none", color_a=(255,255,255)):
-    """Render a single frame of video with background support."""
-    f_params = {"t1": t1, "e1": e1, "eff_seed": eff_seed}
-    bg = make_background_layer(background_mode, width, height, color_a, f_params)
-    
-    grid, pad = make_grid(tile, width, height)
-    dx1, dy1 = displacement(t1, eff_seed, e1, width, height)
-    p1 = warp_rgba(grid, pad, dx1, dy1, width, height)
-    
-    final = Image.alpha_composite(bg, p1).convert("RGB")
-    final = apply_chromatic_aberration(final, ca, eff_seed)
-    return final.resize((width // 2, height // 2), Image.LANCZOS)
-
-def generate_video(day, seed=None, background_mode="none", palette_mode="color"):
+def generate_static(day, seed=None, background_mode="grid", palette_mode="mono"):
     if seed is None: seed = random.randint(0, 2**32)
     rng = random.Random(seed)
     f_path, f_idx, f_lbl = rng.choice(AVAILABLE_FONTS)
     fs = fit_font_to_width(day.upper(), f_path, f_idx, rng.uniform(0.65, 0.95), WIDTH)
     fs_render = fs * 2
-    
-    if palette_mode == "mono":
-        color_a, color_b = (255, 255, 255), (255, 255, 255)
-    else:
-        n_pal = len(PALETTE_WHEEL); b_idx = rng.randint(0, n_pal-1); n_idx = (b_idx + rng.choice([-2,-1,1,2])) % n_pal
-        color_a, color_b = PALETTE_WHEEL[b_idx][1], PALETTE_WHEEL[n_idx][1]
-        
-    grad_img = make_gradient_map(WIDTH*2, HEIGHT*2, color_a, color_b, rng.uniform(0, 360))
+    color_a = (255, 255, 255)
+    grad_img = make_gradient_map(WIDTH*2, HEIGHT*2, color_a, color_a, 0)
     tile = make_word_tile_gradient(day.upper(), f_path, f_idx, fs_render, rng.randint(-10, 80), grad_img)
     
-    tmp_dir = f"temp_frames_{seed}"; os.makedirs(tmp_dir, exist_ok=True)
-    frames_left, state = 0, "HOLD"
-    current_e1, current_t1, f_seed = rng.choice(PRIMARY_EFFECTS), rng.uniform(0.2, 0.4), seed
+    e1 = rng.choice(PRIMARY_EFFECTS); t1 = rng.uniform(0.65, 0.95)
+    dx1, dy1 = displacement(t1, seed, e1, WIDTH*2, HEIGHT*2)
+    bg = make_background_layer(background_mode, WIDTH*2, HEIGHT*2, color_a, dx1, dy1)
+    grid, pad = make_grid(tile, WIDTH*2, HEIGHT*2)
+    p1 = warp_rgba(grid, pad, dx1, dy1, WIDTH*2, HEIGHT*2)
     
+    final = Image.alpha_composite(bg, p1).convert("RGB")
+    ca_str = rng.uniform(20, 40)
+    final = apply_chromatic_aberration(final, ca_str, seed)
+    final = final.resize((WIDTH, HEIGHT), Image.LANCZOS)
+    
+    date_str = datetime.now().strftime("%Y%m%d")
+    out_path = os.path.join(OUTPUT_DIR, f"{e1}_{f_lbl}_{day}_{date_str}_s{seed}.png")
+    final.save(out_path, "PNG")
+    return out_path, {"effect": e1, "font": f_lbl, "seed": seed}
+
+def render_video_frame_manual(tile, dx, dy, ca, width, height, background_mode, color_a, ca_seed):
+    bg = make_background_layer(background_mode, width, height, color_a, dx, dy)
+    grid, pad = make_grid(tile, width, height)
+    p1 = warp_rgba(grid, pad, dx, dy, width, height)
+    final = Image.alpha_composite(bg, p1).convert("RGB")
+    final = apply_chromatic_aberration(final, ca, ca_seed)
+    return final.resize((width // 2, height // 2), Image.LANCZOS)
+
+def generate_video(day, seed=None, background_mode="grid", palette_mode="mono"):
+    if seed is None: seed = random.randint(0, 2**32)
+    rng = random.Random(seed)
+    f_path, f_idx, f_lbl = rng.choice(AVAILABLE_FONTS)
+    fs = fit_font_to_width(day.upper(), f_path, f_idx, rng.uniform(0.65, 0.95), WIDTH)
+    fs_render = fs * 2
+    color_a = (255, 255, 255)
+    grad_img = make_gradient_map(WIDTH*2, HEIGHT*2, color_a, color_a, 0)
+    tile = make_word_tile_gradient(day.upper(), f_path, f_idx, fs_render, rng.randint(-10, 80), grad_img)
+    
+    tmp_dir = os.path.join(os.getcwd(), f"temp_frames_{seed}")
+    if os.path.exists(tmp_dir): shutil.rmtree(tmp_dir)
+    os.makedirs(tmp_dir, exist_ok=True)
+
+    def get_aggressive_anchor():
+        mode, s, t = rng.choice(PRIMARY_EFFECTS), rng.randint(0, 2**32), rng.uniform(0.65, 0.95)
+        return displacement(t, s, mode, WIDTH*2, HEIGHT*2)
+
+    dx_start, dy_start = get_aggressive_anchor()
+    dx_end, dy_end = get_aggressive_anchor()
+    trans_duration, frames_in_trans = FPS * 1.2, 0
+
+    print(f"Rendering {TOTAL_FRAMES} organic frames for {f_lbl} (seed: {seed})...")
     for f in range(TOTAL_FRAMES):
-        if frames_left <= 0:
-            if state == "HOLD": state, frames_left = "BURST", rng.randint(1, 4)
-            else:
-                state, frames_left = "HOLD", rng.randint(8, 25)
-                current_e1, current_t1, f_seed = rng.choice(PRIMARY_EFFECTS), rng.uniform(0.25, 0.45), seed+f
-        
-        if state == "BURST":
-            t1, e1, ca, eff_seed = rng.uniform(0.4, 0.8), rng.choice(PRIMARY_EFFECTS), rng.uniform(30, 60), seed+f*10
-        else:
-            t1, e1, ca, eff_seed = current_t1 + math.sin(f*0.5)*0.05, current_e1, 8 + math.sin(f*0.2)*4, f_seed
-        
-        if palette_mode == "mono": ca = ca * 0.6 # Softer CA for mono
-        
-        bg = render_video_frame(tile, t1, eff_seed, e1, ca, WIDTH*2, HEIGHT*2, background_mode, color_a)
-        bg.save(os.path.join(tmp_dir, f"frame_{f:04d}.png"))
-        frames_left -= 1
-    
+        alpha = frames_in_trans / trans_duration
+        alpha_ease = 0.5 - 0.5 * math.cos(alpha * math.pi)
+        dx = dx_start * (1 - alpha_ease) + dx_end * alpha_ease
+        dy = dy_start * (1 - alpha_ease) + dy_end * alpha_ease
+        drift_amp = 30; dx += drift_amp * math.sin(f * 0.3 + seed); dy += drift_amp * math.cos(f * 0.4 + seed*1.1)
+        ca = (20 * (1 - alpha_ease) + 40 * alpha_ease) * 0.7
+        img = render_video_frame_manual(tile, dx, dy, ca, WIDTH*2, HEIGHT*2, background_mode, color_a, seed)
+        img.save(os.path.join(tmp_dir, f"frame_{f:04d}.png"))
+        frames_in_trans += 1
+        if frames_in_trans >= trans_duration:
+            dx_start, dy_start = dx_end, dy_end; dx_end, dy_end = get_aggressive_anchor(); frames_in_trans = 0
+            
     date_str = datetime.now().strftime("%Y%m%d")
     out_path = os.path.join(OUTPUT_DIR, f"video_{f_lbl}_{day}_{date_str}_s{seed}.mp4")
     subprocess.run(["ffmpeg", "-y", "-framerate", str(FPS), "-i", f"{tmp_dir}/frame_%04d.png", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "18", out_path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     shutil.rmtree(tmp_dir)
-    return out_path, {
-        "font": f_lbl, "fs": fs, "video": True, "fps": FPS, "duration": DURATION,
-        "background_mode": background_mode, "palette_mode": palette_mode
-    }
-
+    return out_path, {"font": f_lbl, "video": True}
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -358,8 +279,8 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type=int, default=None)
     parser.add_argument("--batch", type=int, default=1)
     parser.add_argument("--video", action="store_true")
-    parser.add_argument("--background_mode", default="none")
-    parser.add_argument("--palette_mode", default="color")
+    parser.add_argument("--background_mode", default="grid")
+    parser.add_argument("--palette_mode", default="mono")
     args = parser.parse_args()
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     for _ in range(args.batch):
