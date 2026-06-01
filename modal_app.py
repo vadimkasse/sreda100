@@ -132,7 +132,7 @@ def generate_video_parallel(day: str, seed: int, background_mode: str = "grid", 
             
     out_path = f"/tmp/video_{seed}.mp4"
     subprocess.run(["ffmpeg", "-y", "-framerate", str(gen.FPS), "-i", f"{tmp_dir}/frame_%04d.png", 
-                    "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "18", out_path], 
+                    "-vf", "negate", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "18", out_path], 
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     
     with open(out_path, "rb") as f:
