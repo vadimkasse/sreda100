@@ -248,7 +248,7 @@ def render_frame_composite(grid, pad, dx, dy, ca, width, height, color_a, ca_see
         final = apply_chromatic_aberration(final, ca, ca_seed)
     return final.resize((width // 2, height // 2), Image.LANCZOS)
 
-def generate_static(day, seed=None, style="random", invert=False, apply_ca=False):
+def generate_static(day, seed=None, style="feedback", invert=False, apply_ca=True):
     if seed is None: seed = random.randint(0, 2**32)
     rng = random.Random(seed)
     if style == "random": style = rng.choice(STYLES)
@@ -277,7 +277,7 @@ def generate_static(day, seed=None, style="random", invert=False, apply_ca=False
     final.save(out_path, "PNG")
     return out_path
 
-def generate_video(day, seed=None, style="random", invert=False, apply_ca=False):
+def generate_video(day, seed=None, style="feedback", invert=False, apply_ca=True):
     if seed is None: seed = random.randint(0, 2**32)
     rng = random.Random(seed)
     if style == "random": style = rng.choice(STYLES)
@@ -351,9 +351,9 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type=int, default=None)
     parser.add_argument("--batch", type=int, default=1)
     parser.add_argument("--video", action="store_true")
-    parser.add_argument("--style", default="random", choices=["random"] + STYLES)
-    parser.add_argument("--color", default="random", choices=["random", "bw", "wb"])
-    parser.add_argument("--ca", action="store_true", help="Enable chromatic aberration")
+    parser.add_argument("--style", default="feedback", choices=["random"] + STYLES)
+    parser.add_argument("--color", default="bw", choices=["random", "bw", "wb"])
+    parser.add_argument("--ca", action="store_true", default=True, help="Enable chromatic aberration")
     args = parser.parse_args()
     
     os.makedirs(OUTPUT_DIR, exist_ok=True)

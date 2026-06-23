@@ -74,7 +74,7 @@ def get_day_number():
     return delta.days + 1
 
 @app.function(timeout=600)
-def generate_video_parallel(day: str, seed: int, style: str = "random", invert: bool = False, apply_ca: bool = False):
+def generate_video_parallel(day: str, seed: int, style: str = "feedback", invert: bool = False, apply_ca: bool = True):
     import sreda100 as gen
     import math
     import subprocess
@@ -191,10 +191,10 @@ def generate_endpoint(body: dict) -> dict:
     day = body.get("day", datetime.now().strftime("%A")).strip().upper()
     seed = body.get("seed", random.randint(0, 2**32))
     is_video = body.get("video", False)
-    style = body.get("style", "random")
-    apply_ca = body.get("ca", False)
+    style = body.get("style", "feedback")
+    apply_ca = body.get("ca", True)
     
-    color = body.get("color", "random")
+    color = body.get("color", "bw")
     if color == "random":
         invert = random.choice([True, False])
     elif color == "wb":
@@ -230,7 +230,7 @@ def generate_endpoint(body: dict) -> dict:
 def test_endpoint(day: str = None):
     if day is None: day = datetime.now().strftime("%A").upper()
     else: day = day.strip().upper()
-    print(f"Test 1/1: random style for {day}")
-    data, fname, meta = generate_video_parallel.local(day, 12345, "random", False, False)
+    print(f"Test 1/1: feedback style for {day}")
+    data, fname, meta = generate_video_parallel.local(day, 12345, "feedback", False, True)
     assert data, "no bytes returned"
     print(f"  ✓ {fname}, {len(data)} bytes, meta={meta}")
