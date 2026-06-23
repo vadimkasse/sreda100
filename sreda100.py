@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """
-SREDA100 v21.0 (Organic Aggression)
+SREDA100 v22.0 (Organic Aggression)
 Art project: Rhythmic geometric typography.
 Unified engine: Smooth transitions, aggressive distortion, flicker-free sub-pixel CA.
+Supports 6 styles, random color inversion, and video rendering.
 """
 
 import argparse
@@ -13,7 +14,7 @@ import os
 import subprocess
 import shutil
 from datetime import datetime
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageOps
 
 WIDTH, HEIGHT = 1080, 1920
 OUTPUT_DIR = os.path.expanduser("~/sreda100_output")
@@ -38,10 +39,13 @@ BOLD_FONTS = [
     (os.path.join(FONTS_DIR, "RobotoSlab-Bold.ttf"),                    0, "roboto_slab_bold"),
 ]
 AVAILABLE_FONTS = [(p, i, l) for p, i, l in BOLD_FONTS if os.path.exists(p)]
+if not AVAILABLE_FONTS:
+    AVAILABLE_FONTS = [("/System/Library/Fonts/Helvetica.ttc", 1, "helvetica")]
 
-# Only destructive effects for maximum aggression
 PRIMARY_EFFECTS = ["shatter", "earthquake", "columns", "prism", "slices", "blocks",
                    "glitch", "scatter", "fold", "melt", "wave"]
+
+STYLES = ["classic", "pattern", "outline", "micro_typo", "feedback", "ink_bleed"]
 
 def get_font(path, size, index=0):
     try: return ImageFont.truetype(path, size, index=index)
@@ -165,10 +169,14 @@ def warp_rgba(grid, pad, dx, dy, w, h):
     gn = np.array(grid.convert("RGBA"), dtype=np.float32)
     sy_f, sx_f = np.indices((h, w)).astype(np.float32)
     sy_f, sx_f = sy_f + pad + dy, sx_f + pad + dx
+    # Fix for edge smearing: mask out pixels that fall out of bounds
+    valid_mask = (sy_f >= 0) & (sy_f < gn.shape[0]-1) & (sx_f >= 0) & (sx_f < gn.shape[1]-1)
+    
     sy0, sx0 = np.clip(np.floor(sy_f).astype(np.int32), 0, gn.shape[0]-2), np.clip(np.floor(sx_f).astype(np.int32), 0, gn.shape[1]-2)
     fy, fx = (sy_f - sy0)[..., None], (sx_f - sx0)[..., None]
     v00, v01, v10, v11 = gn[sy0, sx0], gn[sy0, sx0+1], gn[sy0+1, sx0], gn[sy0+1, sx0+1]
     interp = v00*(1-fy)*(1-fx) + v01*(1-fy)*fx + v10*fy*(1-fx) + v11*fy*fx
+    interp = interp * valid_mask[..., None]
     return Image.fromarray(interp.astype(np.uint8), "RGBA")
 
 def apply_chromatic_aberration(img, max_str, seed):
@@ -186,74 +194,117 @@ def apply_chromatic_aberration(img, max_str, seed):
         out[:,:,ch] = v00*(1-fx)*(1-fy) + v01*fx*(1-fy) + v10*(1-fx)*fy + v11*fx*fy
     return Image.fromarray(out.astype(np.uint8), "RGB")
 
-def make_background_layer(mode, width, height, color, dx=None, dy=None):
+def make_background_layer(width, height, color, dx=None, dy=None, draw_grid=True):
     bg = Image.new("RGBA", (width, height), (0, 0, 0, 255))
-    if mode == "grid":
+    if draw_grid:
         layer = Image.new("RGBA", (width, height), (0, 0, 0, 0)); draw = ImageDraw.Draw(layer)
         step, line_w, draw_color = 120, 4, (*color, 255)
         for x in range(0, width, step): draw.line([(x, 0), (x, height)], fill=draw_color, width=line_w)
         for y in range(0, height, step): draw.line([(0, y), (width, y)], fill=draw_color, width=line_w)
-        if dx is not None and dy is not None: layer = warp_rgba(layer, 0, dx, dy, width, height)
+        if dx is not None and dy is not None:
+            layer = warp_rgba(layer, 0, dx, dy, width, height)
         bg = Image.alpha_composite(bg, layer)
     return bg
 
-def generate_static(day, seed=None, background_mode="grid", palette_mode="mono"):
+def apply_ink_bleed(img):
+    blur = img.filter(ImageFilter.GaussianBlur(3))
+    arr = np.array(blur.convert("L"))
+    arr = np.where(arr > 100, 255, 0).astype(np.uint8)
+    return Image.fromarray(arr, "L").convert("RGB")
+
+def build_scene_layer(style, day, f_path, f_idx, fs_render, seed, color_a):
+    rng = random.Random(seed)
+    
+    if style in ["classic", "feedback", "ink_bleed"]:
+        grad_img = make_gradient_map(WIDTH*2, HEIGHT*2, color_a, color_a, 0)
+        tile = make_word_tile_gradient(day.upper(), f_path, f_idx, fs_render, rng.randint(-10, 80), grad_img)
+        grid, pad = make_grid(tile, WIDTH*2, HEIGHT*2)
+        return grid, pad
+    else:
+        grid = Image.new("RGBA", (WIDTH*2, HEIGHT*2), (0,0,0,0))
+        draw = ImageDraw.Draw(grid)
+        font_large = get_font(f_path, int(fs_render*0.6), f_idx)
+        
+        if style == "pattern":
+            for y in range(0, HEIGHT*2, int(fs_render*0.6)):
+                for x in range(-200, WIDTH*2, int(fs_render*2.5)):
+                    draw.text((x + (y%2)*150, y), day.upper(), font=font_large, fill=(*color_a, 255))
+        elif style == "micro_typo":
+            draw.text((WIDTH, HEIGHT), day.upper(), font=font_large, fill=(*color_a, 255), anchor="mm")
+            font_small = get_font(f_path, 80, f_idx)
+            for x, y in [(100, 100), (WIDTH*2-300, 100), (100, HEIGHT*2-100), (WIDTH*2-300, HEIGHT*2-100)]:
+                draw.text((x, y), f"SREDA100 v22\nSEED: {seed}\nSYS: ERR", font=font_small, fill=(*color_a, 255))
+        elif style == "outline":
+            draw.text((WIDTH, HEIGHT), day.upper(), font=font_large, fill=(0,0,0,255), stroke_width=8, stroke_fill=(*color_a, 255), anchor="mm")
+            
+        return grid, 0
+
+def render_frame_composite(grid, pad, dx, dy, ca, width, height, color_a, ca_seed, style, apply_ca=False):
+    draw_grid = style in ["feedback", "ink_bleed"]
+    bg = make_background_layer(width, height, color_a, dx, dy, draw_grid)
+    p1 = warp_rgba(grid, pad, dx, dy, width, height)
+    final = Image.alpha_composite(bg, p1).convert("RGB")
+    if apply_ca:
+        final = apply_chromatic_aberration(final, ca, ca_seed)
+    return final.resize((width // 2, height // 2), Image.LANCZOS)
+
+def generate_static(day, seed=None, style="random", invert=False, apply_ca=False):
     if seed is None: seed = random.randint(0, 2**32)
     rng = random.Random(seed)
+    if style == "random": style = rng.choice(STYLES)
+        
     f_path, f_idx, f_lbl = rng.choice(AVAILABLE_FONTS)
     fs = fit_font_to_width(day.upper(), f_path, f_idx, rng.uniform(0.65, 0.95), WIDTH)
     fs_render = fs * 2
     color_a = (255, 255, 255)
-    grad_img = make_gradient_map(WIDTH*2, HEIGHT*2, color_a, color_a, 0)
-    tile = make_word_tile_gradient(day.upper(), f_path, f_idx, fs_render, rng.randint(-10, 80), grad_img)
+    
+    grid, pad = build_scene_layer(style, day, f_path, f_idx, fs_render, seed, color_a)
     
     e1 = rng.choice(PRIMARY_EFFECTS); t1 = rng.uniform(0.65, 0.95)
     dx1, dy1 = displacement(t1, seed, e1, WIDTH*2, HEIGHT*2)
-    bg = make_background_layer(background_mode, WIDTH*2, HEIGHT*2, color_a, dx1, dy1)
-    grid, pad = make_grid(tile, WIDTH*2, HEIGHT*2)
-    p1 = warp_rgba(grid, pad, dx1, dy1, WIDTH*2, HEIGHT*2)
     
-    final = Image.alpha_composite(bg, p1).convert("RGB")
-    ca_str = rng.uniform(20, 40)
-    final = apply_chromatic_aberration(final, ca_str, seed)
-    final = final.resize((WIDTH, HEIGHT), Image.LANCZOS)
+    final = render_frame_composite(grid, pad, dx1, dy1, rng.uniform(20, 40), WIDTH*2, HEIGHT*2, color_a, seed, style, apply_ca)
+    
+    if style == "ink_bleed":
+        final = apply_ink_bleed(final)
+        
+    if invert:
+        final = ImageOps.invert(final)
     
     date_str = datetime.now().strftime("%Y%m%d")
-    out_path = os.path.join(OUTPUT_DIR, f"{e1}_{f_lbl}_{day}_{date_str}_s{seed}.png")
+    color_label = "wb" if invert else "bw"
+    out_path = os.path.join(OUTPUT_DIR, f"static_{style}_{color_label}_{f_lbl}_{day}_{date_str}_s{seed}.png")
     final.save(out_path, "PNG")
-    return out_path, {"effect": e1, "font": f_lbl, "seed": seed}
+    return out_path
 
-def render_video_frame_manual(tile, dx, dy, ca, width, height, background_mode, color_a, ca_seed):
-    bg = make_background_layer(background_mode, width, height, color_a, dx, dy)
-    grid, pad = make_grid(tile, width, height)
-    p1 = warp_rgba(grid, pad, dx, dy, width, height)
-    final = Image.alpha_composite(bg, p1).convert("RGB")
-    final = apply_chromatic_aberration(final, ca, ca_seed)
-    return final.resize((width // 2, height // 2), Image.LANCZOS)
-
-def generate_video(day, seed=None, background_mode="grid", palette_mode="mono"):
+def generate_video(day, seed=None, style="random", invert=False, apply_ca=False):
     if seed is None: seed = random.randint(0, 2**32)
     rng = random.Random(seed)
+    if style == "random": style = rng.choice(STYLES)
+        
     f_path, f_idx, f_lbl = rng.choice(AVAILABLE_FONTS)
     fs = fit_font_to_width(day.upper(), f_path, f_idx, rng.uniform(0.65, 0.95), WIDTH)
     fs_render = fs * 2
     color_a = (255, 255, 255)
-    grad_img = make_gradient_map(WIDTH*2, HEIGHT*2, color_a, color_a, 0)
-    tile = make_word_tile_gradient(day.upper(), f_path, f_idx, fs_render, rng.randint(-10, 80), grad_img)
+    
+    grid, pad = build_scene_layer(style, day, f_path, f_idx, fs_render, seed, color_a)
     
     tmp_dir = os.path.join(os.getcwd(), f"temp_frames_{seed}")
     if os.path.exists(tmp_dir): shutil.rmtree(tmp_dir)
     os.makedirs(tmp_dir, exist_ok=True)
 
     def get_aggressive_anchor():
-        mode, s, t = rng.choice(PRIMARY_EFFECTS), rng.randint(0, 2**32), rng.uniform(0.65, 0.95)
+        mode = rng.choice(PRIMARY_EFFECTS)
+        s, t = rng.randint(0, 2**32), rng.uniform(0.65, 0.95)
         return displacement(t, s, mode, WIDTH*2, HEIGHT*2)
 
     dx_start, dy_start = get_aggressive_anchor()
     dx_end, dy_end = get_aggressive_anchor()
     trans_duration, frames_in_trans = FPS * 1.2, 0
 
-    print(f"Rendering {TOTAL_FRAMES} organic frames for {f_lbl} (seed: {seed})...")
+    feedback_state = None
+
+    print(f"Rendering {TOTAL_FRAMES} frames for {f_lbl} | Style: {style} | Invert: {invert} (seed: {seed})...")
     for f in range(TOTAL_FRAMES):
         alpha = frames_in_trans / trans_duration
         alpha_ease = 0.5 - 0.5 * math.cos(alpha * math.pi)
@@ -261,17 +312,38 @@ def generate_video(day, seed=None, background_mode="grid", palette_mode="mono"):
         dy = dy_start * (1 - alpha_ease) + dy_end * alpha_ease
         drift_amp = 30; dx += drift_amp * math.sin(f * 0.3 + seed); dy += drift_amp * math.cos(f * 0.4 + seed*1.1)
         ca = (20 * (1 - alpha_ease) + 40 * alpha_ease) * 0.7
-        img = render_video_frame_manual(tile, dx, dy, ca, WIDTH*2, HEIGHT*2, background_mode, color_a, seed)
-        img.save(os.path.join(tmp_dir, f"frame_{f:04d}.png"))
+        
+        final = render_frame_composite(grid, pad, dx, dy, ca, WIDTH*2, HEIGHT*2, color_a, seed, style, apply_ca)
+        
+        if style == "ink_bleed":
+            final = apply_ink_bleed(final)
+        elif style == "feedback":
+            arr = np.array(final).astype(np.float32)
+            if feedback_state is None: 
+                feedback_state = arr
+            else:
+                shift_y = 15; shift_x = 0
+                shifted = np.roll(feedback_state, shift_y, axis=0)
+                feedback_state = np.maximum(arr, shifted * 0.85)
+            final = Image.fromarray(np.clip(feedback_state, 0, 255).astype(np.uint8), "RGB")
+
+        final.save(os.path.join(tmp_dir, f"frame_{f:04d}.png"))
         frames_in_trans += 1
         if frames_in_trans >= trans_duration:
             dx_start, dy_start = dx_end, dy_end; dx_end, dy_end = get_aggressive_anchor(); frames_in_trans = 0
             
     date_str = datetime.now().strftime("%Y%m%d")
-    out_path = os.path.join(OUTPUT_DIR, f"video_{f_lbl}_{day}_{date_str}_s{seed}.mp4")
-    subprocess.run(["ffmpeg", "-y", "-framerate", str(FPS), "-i", f"{tmp_dir}/frame_%04d.png", "-vf", "negate", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "18", out_path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    color_label = "wb" if invert else "bw"
+    out_path = os.path.join(OUTPUT_DIR, f"video_{style}_{color_label}_{f_lbl}_{day}_{date_str}_s{seed}.mp4")
+    
+    ffmpeg_cmd = ["ffmpeg", "-y", "-framerate", str(FPS), "-i", f"{tmp_dir}/frame_%04d.png"]
+    if invert:
+        ffmpeg_cmd.extend(["-vf", "negate"])
+    ffmpeg_cmd.extend(["-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "18", out_path])
+    
+    subprocess.run(ffmpeg_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     shutil.rmtree(tmp_dir)
-    return out_path, {"font": f_lbl, "video": True}
+    return out_path
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -279,10 +351,23 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type=int, default=None)
     parser.add_argument("--batch", type=int, default=1)
     parser.add_argument("--video", action="store_true")
-    parser.add_argument("--background_mode", default="grid")
-    parser.add_argument("--palette_mode", default="mono")
+    parser.add_argument("--style", default="random", choices=["random"] + STYLES)
+    parser.add_argument("--color", default="random", choices=["random", "bw", "wb"])
+    parser.add_argument("--ca", action="store_true", help="Enable chromatic aberration")
     args = parser.parse_args()
+    
     os.makedirs(OUTPUT_DIR, exist_ok=True)
+    
     for _ in range(args.batch):
-        if args.video: generate_video(args.day, args.seed, args.background_mode, args.palette_mode)
-        else: generate_static(args.day, args.seed, args.background_mode, args.palette_mode)
+        current_seed = args.seed if args.seed is not None else random.randint(0, 2**32)
+        
+        # Decide invert based on color mode
+        if args.color == "random":
+            invert_flag = random.choice([True, False])
+        else:
+            invert_flag = True if args.color == "wb" else False
+            
+        if args.video: 
+            generate_video(args.day, current_seed, args.style, invert_flag, args.ca)
+        else: 
+            generate_static(args.day, current_seed, args.style, invert_flag, args.ca)
